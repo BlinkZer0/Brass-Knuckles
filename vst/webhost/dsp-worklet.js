@@ -560,6 +560,26 @@ function synthWorkletModule() {
     }
   }
 
+  // ===================================================== dsp/PhysModel.h ===
+  // Driven-valve waveguide (see the C++ header for the model).
+  const kPmMinHz = 20.0, kPmGain = 2.5;
+  function physBufferSize(sr) { let size = 1; while (size < Math.trunc(sr / kPmMinHz) + 8) size <<= 1; return size; }
+  function physBellCoef(fc, sr) { fc = Math.min(Math.max(fc, 50), sr * 0.45); return 1 - Math.exp(-kTwoPi * fc / sr); }
+  class PhysModelVoice {
+    constructor() {
+      this.buf = null; this.mask = 0; this.w = 0;
+      this.c = 1; this.s = 0;
+      this.lp = 0; this.dcx = 0; this.dcy = 0; this.ox = 0; this.oy = 0;
+      this.dt = 0; this.pm = 0; this.sh = 1; this.bell = 0.5;
+    }
+    reset() {
+      if (this.buf) this.buf.fill(0);
+      this.w = 0; this.c = 1; this.s = 0;
+      this.lp = this.dcx = this.dcy = this.ox = this.oy = 0;
+      this.pm = 0;
+    }
+  }
+
   // ======================================================= SynthEngine.h ===
   const kNumOsc = 3, kMaxPoly = 64, kMaxPlayers = 8, kPoolSize = 288, kChunk = 32;
   const kVoiceGain = 0.45, kKillTime = 0.006, kNumChannels = 16, kLn10Over20 = 0.11512925464970229;
@@ -567,7 +587,8 @@ function synthWorkletModule() {
   const modePoly = 0, modeMono = 1, modeLegato = 2;
   const fltLP12 = 0, fltLP24 = 1, fltBP = 2;
   const plKnob = 0, plWheel = 1, plBreath = 2, plExpression = 3, plAftertouch = 4, plCC = 5;
-  const engModeled = 0, engAnalog = 1;
+  const engModeled = 0, engAnalog = 1, engPhysical = 2;
+  const pmAuto = 0, pmLips = 1, pmReed = 2;
   const artNormal = 0, artFall = 1, artDoit = 2, artRip = 3, artShake = 4, artScoop = 5, kNumArticulations = 6;
 
   const kNumLfo = 2, kNumModSlots = 12;
@@ -621,6 +642,7 @@ function synthWorkletModule() {
       fxDrvAmt: 0.3, fxDrvTone: 0.7, fxDrvMix: 1,
       eqLoGain: 0, eqLoFreq: 200, eqMidGain: 0, eqMidFreq: 1200, eqMidQ: 1, eqHiGain: 0, eqHiFreq: 6000,
       chRate: 0.6, chDepth: 0.4, chMix: 0.35, rvDecay: 1.8, rvPre: 20, rvDamp: 0.5, rvMix: 0.2, stWidth: 1,
+      pmType: pmAuto, pmBlow: 0.7, pmLip: 0, pmLoss: 0.3, pmBell: 0.5, pmNoise: 0.1,
     };
   }
 
@@ -633,7 +655,7 @@ function synthWorkletModule() {
     const inum = (id) => lround(num(id));
 
     p.instrument = choice('instrument', 9);
-    p.engineMode = choice('engineMode', 1);
+    p.engineMode = choice('engineMode', 2);
     p.ampGain = Math.pow(10, num('ampLevel') / 20);
     p.master = num('master');
     p.tuneSemis = num('tune') / 100;
@@ -819,6 +841,13 @@ function synthWorkletModule() {
     p.rvMix = num('rvMix');
     p.stWidth = num('stWidth');
 
+    p.pmType = choice('pmType', 2);
+    p.pmBlow = num('pmBlow');
+    p.pmLip = num('pmLip');
+    p.pmLoss = num('pmLoss');
+    p.pmBell = num('pmBell');
+    p.pmNoise = num('pmNoise');
+
     p.vibDepth = num('vibDepth');
     p.vibAmp = num('vibAmp');
     p.vibRate = num('vibRate');
@@ -878,6 +907,7 @@ function synthWorkletModule() {
       this.slide = -1;
       this.lfo = [new Lfo(), new Lfo()];
       this.rnd = 0;
+      this.pmv = new PhysModelVoice();
     }
   }
 
@@ -964,6 +994,14 @@ function synthWorkletModule() {
       this.lfoSmooth = 1 - Math.exp(-kChunk / (0.002 * sr));
       this.chorus.prepare(sr);
       this.reverb.prepare(sr);
+      {
+        const size = physBufferSize(sr);
+        this.pmPool = new Float32Array(kPoolSize * size);
+        for (let i = 0; i < kPoolSize; ++i) {
+          this.voices[i].pmv.buf = this.pmPool.subarray(i * size, (i + 1) * size);
+          this.voices[i].pmv.mask = size - 1;
+        }
+      }
       this.lfoG = [new Lfo(), new Lfo()];
       this.slotAmt.fill(0);
       this.fxInit = true;
@@ -1421,6 +1459,8 @@ function synthWorkletModule() {
         v.dcX = v.dcY = v.toneZ = v.nPrev = 0;
         v.artSemis = 0;
         v.slide = -1;
+        if (P.engineMode === engPhysical) v.pmv.reset();
+        else v.pmv.pm = 0;
         for (let i = 0; i < kNumLfo; ++i)
           v.lfo[i].start(P.lfo[i].retrig ? 0 : rng.uni(), rng);
         v.snap = true;
@@ -1808,6 +1848,7 @@ function synthWorkletModule() {
       const dtSec = n / sr;
       if (v.delayLeft > 0) { v.delayLeft -= dtSec; return; }
       const analog = P.engineMode === engAnalog;
+      const physical = P.engineMode === engPhysical;
       v.tNote += dtSec;
       v.tVib += dtSec;
       v.slurT += dtSec;
@@ -1959,7 +2000,7 @@ function synthWorkletModule() {
                    + (vibCents + growlCents) / 100 + 0.25 * blat + 12 * dst[dstPitchAll];
       const tdt = this.sTdt, tlvl = this.sTlvl, tshape = this.sTshape, tpw = this.sTpw, tg = this.sTg, tk = this.sTk;
       let alive = false;
-      let envMain = 0, pe0 = 0, hz0 = 440;
+      let envMain = 0, pe0 = 0, hz0 = 440, blow0 = 0;
       const et = this.sEnv;
       for (let k = 0; k < kNumOsc; ++k) {
         const O = P.osc[k], o = v.o[k];
@@ -1967,8 +2008,10 @@ function synthWorkletModule() {
         const aLvl = o.amp.advance(et, dtSec);
         scaledInto(et, O.tmb, o.tTime, o.tAtkTime);
         const tLvl = o.tmb.advance(et, dtSec);
-        if (O.on && o.amp.active()) alive = true;
-        if (O.on) envMain = Math.max(envMain, aLvl);
+        const sounding = physical ? k === 0 : O.on;   // Physical: OSC 1's amp envelope is the blowing pressure
+        if (sounding && o.amp.active()) alive = true;
+        if (sounding) envMain = Math.max(envMain, aLvl);
+        if (k === 0) blow0 = aLvl * o.ampScale;
 
         let pe = O.pAmt * o.pScale * v.tgScoop * (1 - curveShape(Math.min(v.tNote / (O.pTime * o.pTime), 1), O.pCrv));
         const bx = v.tNote / (O.blipTime * o.pTime);
@@ -1983,14 +2026,14 @@ function synthWorkletModule() {
         tk[k] = SVF.kFor(O.res * 0.9);
         tshape[k] = clampd(O.shape + tLvl * O.tShape * o.tScale + 3 * dst[dstOsc1Shape + k], 0, 3);
         tpw[k] = clampd(O.pw + 0.45 * dst[dstOsc1PW + k], 0.05, 0.95);
-        tlvl[k] = O.on ? O.level * aLvl * o.ampScale * clampd(1 + dst[dstOsc1Level + k], 0, 2) : 0;
+        tlvl[k] = O.on && !physical ? O.level * aLvl * o.ampScale * clampd(1 + dst[dstOsc1Level + k], 0, 2) : 0;
       }
 
       // additive harmonic layer
       const tA = this.sTA;
       let addCount = 0;
       let tdtA = v.add.dt;
-      const addOn = P.addOn && !analog;
+      const addOn = P.addOn && !analog && !physical;
       if (addOn) {
         const T = ADD;
         const nodeLvl = this.sNodeLvl;
@@ -2068,7 +2111,7 @@ function synthWorkletModule() {
       let tLip = 0, tClick = 0, tNoise = 0, tLipG = v.lipG, tNG = v.nG;
       if (extras) {
         const tChiff = v.chiffPeak * Math.exp(-v.tTrans / 0.035);
-        tLip = v.lipPeak * Math.exp(-v.tTrans / Math.max(P.lipDecay * v.tgDecay, 0.001))
+        tLip = physical ? 0 : v.lipPeak * Math.exp(-v.tTrans / Math.max(P.lipDecay * v.tgDecay, 0.001))
                * clampd(1 + dst[dstLipBuzz], 0, 3) * plScale;
         tClick = v.clickPeak * Math.exp(-v.tClick / 0.005) * plScale;
         tNoise = (P.brNoise * (1 - P.brDyn + P.brDyn * d) * envMain * (1 + 2 * flutNoise) * clampd(1 + dst[dstBreathNoise], 0, 3)
@@ -2116,7 +2159,22 @@ function synthWorkletModule() {
         v.panMod = dst[dstPan] !== 0;
       }
 
+      // physical model: valve frequency, mouth pressure, pulse shape, bell
+      let tPmDt = v.pmv.dt, tPm = 0, tPmSh = v.pmv.sh, tPmBell = v.pmv.bell;
+      let reedValve = false, pmR = 0.95, pmNz = 0;
+      if (physical) {
+        reedValve = P.pmType === pmReed || (P.pmType === pmAuto && P.instrument >= 5 && P.instrument <= 8);
+        tPmDt = Math.min(Math.max(hz0, kPmMinHz) / sr, 0.25);
+        tPm = clampd(P.pmBlow * blow0 * (0.2 + 0.8 * d), 0, 1.5);
+        const tension = Math.pow(2, 2 * P.pmLip);
+        tPmSh = reedValve ? (1 + 20 * tPm * tPm) * tension : 8 * tension * Math.pow(2, -0.6 * bright);
+        tPmBell = physBellCoef(400 * Math.pow(2, P.pmBell * 5 + (reedValve ? 0.35 : 0.2) * bright), sr);
+        pmR = 0.995 - 0.15 * P.pmLoss;
+        pmNz = 0.5 * P.pmNoise;
+      }
+
       if (v.snap) {
+        v.pmv.dt = tPmDt; v.pmv.sh = tPmSh; v.pmv.bell = tPmBell;
         for (let k = 0; k < kNumOsc; ++k) {
           const o = v.o[k];
           o.dt = tdt[k]; o.shape = tshape[k]; o.pw = tpw[k]; o.g = tg[k]; o.k = tk[k];
@@ -2140,7 +2198,7 @@ function synthWorkletModule() {
         pw[k] = o.pw; dpw[k] = (tpw[k] - o.pw) * inv;
         g[k] = o.g; dg[k] = (tg[k] - o.g) * inv;
         kk[k] = o.k; dkk[k] = (tk[k] - o.k) * inv;
-        run[k] = (P.osc[k].on || o.lvl > 0) ? 1 : 0;
+        run[k] = ((P.osc[k].on && !physical) || o.lvl > 0) ? 1 : 0;
       }
       const aA = this.sAA, daA = this.sDaA, vamp = v.add.amp;
       for (let k = 0; k < addRun; ++k) { aA[k] = vamp[k]; daA[k] = (tA[k] - aA[k]) * inv; }
@@ -2160,11 +2218,49 @@ function synthWorkletModule() {
       const mixL = this.mixL, mixR = this.mixR, dcR = this.dcR;
       const o0 = v.o[0], o1 = v.o[1], o2 = v.o[2];
       const run0 = run[0] === 1, run1 = run[1] === 1, run2 = run[2] === 1;
-      const anyNoise = noiseOn || lipOn || clickOn;
+      const anyNoise = noiseOn || lipOn || clickOn || (physical && pmNz > 0);
+      const PM = v.pmv;
+      let pdt = PM.dt, ppm = PM.pm, psh = PM.sh, pbell = PM.bell;
+      const dpdt = (tPmDt - pdt) * inv, dppm = (tPm - ppm) * inv, dpsh = (tPmSh - psh) * inv, dpbell = (tPmBell - pbell) * inv;
+      const prc = Math.cos(kPi * (PM.dt + tPmDt)), prs = Math.sin(kPi * (PM.dt + tPmDt));
+      let qc = PM.c, qs = PM.s, plp = PM.lp, pdx = PM.dcx, pdy = PM.dcy, pox = PM.ox, poy = PM.oy, bw = PM.w;
+      const pmask = PM.mask, pbuf = PM.buf;
       let dcX = v.dcX, dcY = v.dcY, toneZ = v.toneZ, nPrev = v.nPrev;
 
       for (let i = 0; i < n; ++i) {
         let s = 0;
+        const wn = anyNoise ? v.nrng.bi() : 0;
+        if (physical) {
+          pdt += dpdt; ppm += dppm; psh += dpsh; pbell += dpbell;
+          const nc = qc * prc - qs * prs;
+          qs = qs * prc + qc * prs;
+          qc = nc;
+          const b = 0.5 - 0.5 * qc;
+          const pulse = b / (1 + psh * (1 - b));
+          const pmN = ppm * (1 + pmNz * wn);
+          let h;
+          if (reedValve) { h = 1 - (0.5 + 0.9 * pmN) * pulse; if (h < 0) h = 0; }
+          else h = 10.0 * (0.1 + pmN) * pulse;
+          let T = 1 / pdt - (1 - pbell) / pbell;
+          if (T < 2) T = 2;
+          const rp = bw + 1 - T;
+          const i0 = Math.floor(rp);
+          const fr = rp - i0;
+          const x0 = pbuf[i0 & pmask], x1 = pbuf[(i0 + 1) & pmask];
+          const back = x0 + (x1 - x0) * fr;
+          plp += (back - plp) * pbell;
+          const hp = plp - pdx + dcR * pdy; pdx = plp; pdy = hp;
+          const pin = pmR * hp;
+          const a = pmN - 2 * pin;
+          let dp;
+          if (a >= 0) { const q = 0.5 * (Math.sqrt(h * h + 4 * a) - h); dp = q * q; }
+          else { const q = 0.5 * (Math.sqrt(h * h - 4 * a) - h); dp = -q * q; }
+          const pout = pmN - dp - pin;
+          bw = (bw + 1) & pmask;
+          pbuf[bw] = pout;
+          const y = back - pox + dcR * poy; pox = back; poy = y;
+          s += y * kPmGain;
+        }
         if (run0) {
           dt[0] += ddt[0]; lv[0] += dlv[0]; sh[0] += dsh[0]; pw[0] += dpw[0]; g[0] += dg[0]; kk[0] += dkk[0];
           s += o0.filt.process(o0.osc.next(sh[0], pw[0], dt[0]), g[0], kk[0]) * lv[0];
@@ -2193,7 +2289,6 @@ function synthWorkletModule() {
           }
           s += acc;
         }
-        const wn = anyNoise ? v.nrng.bi() : 0;
         if (lipOn) {
           lipL += dlipL; lipG += dlipG;
           const ph = v.lipPhase;
@@ -2235,6 +2330,12 @@ function synthWorkletModule() {
       }
       v.dcX = dcX; v.dcY = dcY; v.toneZ = toneZ; v.nPrev = nPrev;
       v.panL = tPanL; v.panR = tPanR;
+      if (physical) {
+        const len = 1 / Math.sqrt(qc * qc + qs * qs);
+        PM.c = qc * len; PM.s = qs * len;
+        PM.lp = plp; PM.dcx = pdx; PM.dcy = pdy; PM.ox = pox; PM.oy = poy; PM.w = bw;
+      }
+      PM.dt = tPmDt; PM.pm = tPm; PM.sh = tPmSh; PM.bell = tPmBell;
 
       for (let k = 0; k < kNumOsc; ++k) {
         const o = v.o[k];

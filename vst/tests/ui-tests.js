@@ -37,7 +37,7 @@
     check('no script errors during start-up', window.__bkErrors.length === 0, window.__bkErrors.join(' | '));
     check('bridge connected (config received, web mode)', document.body.classList.contains('web'), document.body.className);
     check('audio started (ScriptProcessor on file://)', host.audioMode === 'ScriptProcessor' || host.audioMode === 'AudioWorklet', host.audioMode || 'none');
-    check('120 factory presets in 12 categories', host.factory.length === 120 && new Set(host.factory.map(p => p.category)).size === 12,
+    check('130 factory presets in 13 categories', host.factory.length === 130 && new Set(host.factory.map(p => p.category)).size === 13,
           `${host.factory.length} presets`);
     check('starts on the first factory preset', $('#preset-name').textContent.startsWith(host.factory[0].name) && host.current.id === 'factory:0',
           $('#preset-name').textContent);
@@ -244,6 +244,18 @@
         for (let i = 0; i < 128; i++) { e += L[i] * L[i] + R[i] * R[i]; if (!isFinite(L[i]) || !isFinite(R[i])) bad++; }
       }
       check('the page\'s DSP renders the loaded sound (audible, finite)', e > 1e-3 && bad === 0, `energy ${e.toExponential(2)}, non-finite ${bad}`);
+      // and a Physical engine preset
+      const phys = host.factory.find(f => f.category === 'Physical');
+      const vals = Object.assign(defaultParamValues(), phys ? phys.values : {});
+      const q = new Proc({ processorOptions: { params: vals } });
+      let ep = 0, badp = 0;
+      q.port.onmessage({ data: { type: 'midi', data: [0x90, 64, 100] } });
+      for (let b = 0; b < 200; b++) {
+        q.process([], [[L, R]]);
+        for (let i = 0; i < 128; i++) { ep += L[i] * L[i] + R[i] * R[i]; if (!isFinite(L[i]) || !isFinite(R[i])) badp++; }
+      }
+      check('a Physical engine preset renders in the page (audible, finite)', !!phys && Math.round(vals.engineMode) === 2 && ep > 1e-3 && badp === 0,
+            `${phys ? phys.name : 'none'}: energy ${ep.toExponential(2)}, non-finite ${badp}`);
     }
 
     // ---- served over http: the AudioWorklet runs and renders in real time ---------------

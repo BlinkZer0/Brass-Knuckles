@@ -727,9 +727,14 @@
     knobRow(sect, ['secPlayers', 'secDetune', 'secTiming', 'secVibDesync', 'secTimbre', 'secWidth'], 'knob-md');
     r2.appendChild(sect);
 
-    const ana = makePanel('ANALOG ENGINE · UNISON', control(Segmented, 'engineMode').el);
+    const ana = makePanel('ENGINE · UNISON', control(Segmented, 'engineMode').el);
     knobRow(ana, ['anaUnison', 'anaDetune', 'anaSpread', 'anaBlat'], 'knob-md');
     r2.appendChild(ana);
+
+    const phys = makePanel('PHYSICAL MODEL', control(Segmented, 'pmType').el);
+    knobRow(phys, ['pmBlow', 'pmLip', 'pmLoss', 'pmBell', 'pmNoise'], 'knob-md');
+    phys.appendChild(el('div', 'kbd-hint', 'Engine = Physical: lips or a reed drive a waveguide bore at the played pitch.<br>OSC 1 amp envelope = blowing pressure; dynamics push it harder.'));
+    r2.appendChild(phys);
 
     const mpe = makePanel('MPE', control(ToggleButton, 'mpeOn').el);
     knobRow(mpe, ['mpeBend', 'bendRange'], 'knob-md');
@@ -755,8 +760,9 @@
       pg.legend.innerHTML = N > 1 ? `<b>${N} players</b> · up/down = detune` : 'solo (1 player)';
       sect.classList.toggle('off', sec <= 1);
       ana.classList.toggle('off', !analog);
+      phys.classList.toggle('off', Math.round(values.engineMode) !== 2);
     }
-    refreshers.push((ids) => { if (touches(ids, 'sec', 'ana', 'engineMode')) drawPlayers(); });
+    refreshers.push((ids) => { if (touches(ids, 'sec', 'ana', 'engineMode', 'pm')) drawPlayers(); });
     refreshers.push((ids) => {
       if (!touches(ids, 'artKs')) return;
       const base = Math.round(values.artKsBase), on = values.artKs >= 0.5;
@@ -941,7 +947,7 @@
     $('#tone-led').classList.toggle('on', Math.round(values.muteType) > 0 || values.brsAmt > 0.005 || values.dynBrass > 0.005);
     $('#attack-led').classList.toggle('on', values.growlAmt > 0.005 || values.flutAmt > 0.005);
     $('#perform-led').classList.toggle('on', artNow > 0 || values.artAuto >= 0.5 || values.secPlayers > 1.5
-      || values.mpeOn >= 0.5 || Math.round(values.engineMode) === 1);
+      || values.mpeOn >= 0.5 || Math.round(values.engineMode) >= 1);
     let routes = false;
     for (let s = 1; s <= NUM_MOD_SLOTS; s++)
       if (values[`mod${s}On`] >= 0.5 && values[`mod${s}Src`] >= 0.5 && values[`mod${s}Dst`] >= 0.5 && Math.abs(values[`mod${s}Amt`]) > 0.001) routes = true;

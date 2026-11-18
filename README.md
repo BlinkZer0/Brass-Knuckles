@@ -7,7 +7,7 @@ moment after the fundamental, and a breath controller swells and brightens a hel
 
 | Build | Where | Status |
 |---|---|---|
-| **VST3 plugin** + Standalone | [`vst/`](vst/README.md) | v1.0 release candidate: complete engine, 120 presets, all automated checks passing |
+| **VST3 plugin** + Standalone | [`vst/`](vst/README.md) | v1.0 release candidate + physical-model engine: 130 presets, all automated checks passing |
 | **Web build** | [`web/index.html`](web/index.html) | One self-contained HTML file: the same UI, a JS twin of the engine (checked against the C++ engine by a parity test), Web MIDI |
 
 ![Brass Knuckles: the PLAY page with the preset browser, instrument, dynamics, vibrato, voice and output panels, and the keyboard with the trumpet's range highlighted](docs/screenshots/play.png)
@@ -32,6 +32,22 @@ moment after the fundamental, and a breath controller swells and brightens a hel
   dark when soft, nearly flat when loud. Tilt and odd/even on top.
 
 ![HARMONICS page: the spectrum at soft and loud dynamics and the spectral-delay timing of harmonics 1, 4, 9 and 21](docs/screenshots/harm.png)
+
+### Physical engine: lips and reeds blowing into a bore
+Set **Engine** (PERFORM page) to **Physical** and the oscillators and harmonic layer make way for a physical model:
+- a **valve**: the player's **lips** (they open wider the harder you blow) or a **reed** (pressure closes it; a loud
+  reed slaps shut every cycle, the source of a sax's edge), chosen by the instrument or forced with **Valve**;
+- **air flow** through the opening, worked out every sample from the mouth pressure and the pressure coming back
+  down the bore (Bernoulli flow);
+- a **bore** one period long: at the **bell** part of the wave escapes (the highs first) and the rest travels back
+  to the mouthpiece, so the tone builds up over the first few periods and its spectrum is shaped by the bore.
+
+The blowing pressure is OSC 1's amp envelope × dynamics × **Blow**, so velocity, breath controllers, expression,
+aftertouch and MPE pressure all blow harder or softer: louder, and brighter. **Lip/Reed** sets lip tension or reed
+stiffness, **Bore Loss** the damping, **Bell** how much treble escapes, **Turbulence** the air noise in the
+pressure. The lips move at the played pitch (players lock onto the note), so every note is in tune and glides,
+vibrato, bends, articulations, sections, MPE, filter, brassiness, body, mutes and FX all work as on the other
+engines. The **Physical** category has ten presets built on it.
 
 ### Dynamics: louder is brighter
 - One **dynamics** value per note from **velocity**, **breath** (CC2 or any CC), **expression** (CC11), **channel
@@ -87,13 +103,13 @@ Then rescan plugins in your host. The Standalone app
 (`%LOCALAPPDATA%\BrassKnucklesVST\build\BrassKnucklesVST_artefacts\Release\Standalone\Brass Knuckles.exe`) plays
 without a host; pick the audio device and MIDI input under *Options → Audio/MIDI Settings*.
 
-In the host, Brass Knuckles is an instrument with MIDI in and stereo out. All 341 parameters can be automated; the 120
+In the host, Brass Knuckles is an instrument with MIDI in and stereo out. All 347 parameters can be automated; the 130
 factory presets are also host programs. **Right-click any control** for the host's own parameter menu (automation,
 link to controller).
 
 ## Web build
 
-`web/index.html` is the whole instrument in one file (UI, engine, 120 presets; about 300 KB, no downloads). It runs in
+`web/index.html` is the whole instrument in one file (UI, engine, 130 presets; about 300 KB, no downloads). It runs in
 **Chrome or Edge** (desktop).
 
 ```
@@ -113,7 +129,8 @@ vst\webhost\build-web.ps1                   rebuild web/index.html after changin
   is rescanned every 2 seconds, like the plugin's. **LOAD** opens any `.bkpreset` file.
 - **CPU** (one core): JavaScript is about 2.5-3× slower than the C++ build. A solo preset uses 2-3% for one note and
   about 14% for a 12-note chord; a section preset with a 4-note chord 12-22%. Section presets with 8 players and a
-  12-note chord use about 63%, near the limit of a browser audio thread: play big section chords in the VST.
+  12-note chord use about 63%, near the limit of a browser audio thread: play big section chords in the VST. The
+  Physical engine is lighter: about 7% for a 12-note chord, 16% for the 4-player Physical Brass Section.
 
 ## MIDI, breath controllers, keyswitches, MPE
 
@@ -133,7 +150,7 @@ vst\webhost\build-web.ps1                   rebuild web/index.html after changin
 
 ## Presets
 
-120 factory presets, 12 categories of 10, level-matched to within 0.1 dB. Each is set up to sound right from
+130 factory presets, 13 categories of 10, level-matched to within 0.1 dB. Each is set up to sound right from
 velocity alone and better with a breath controller.
 
 | Category | Presets |
@@ -150,6 +167,7 @@ velocity alone and better with a breath controller.
 | **Sections** | Trumpet Section, Trombone Section, Sax Section, Big Band Stab, Brass Pad, Full Brass Swell, Soft Sax Pad, Shout Section, Mellow Ensemble, Fanfare Section |
 | **Synth Brass** | 80s Stab, 80s Brass Stack, Blat Brass, Poly Brass, Synth Brass Pad, Jump Brass, Synth Horn Hybrid, Funk Synth Brass, Wide Unison Brass, Pulse Brass |
 | **Hybrid/FX** | Swell Horn, Tempo Wah Horn, Tremolo Flugel, Breath Pad, Shimmer Horns, Doppler Brass, Space Flugel, Growl Machine, S&H Brass, Underwater Horn |
+| **Physical** | Physical Trumpet, Physical Flugel, Physical Trombone, Physical Horn, Physical Tuba, Physical Soprano, Physical Alto, Physical Tenor, Physical Bari, Physical Brass Section |
 
 User presets are `.bkpreset` files (plain JSON, versioned) in **`Documents\Brass Knuckles\Presets`**, one subfolder
 per category. New, renamed and deleted files show up within about 2 seconds; SAVE asks before replacing a file; the ×
@@ -158,7 +176,7 @@ on a user preset moves it to the Recycle Bin.
 ## Checked automatically
 
 `BrassKnucklesTests.exe` (details in [vst/README.md](vst/README.md#tests)) checks, among others:
-- every preset loads, renders, isn't silent, doesn't clip, and is within ±1 dB of the loudness target (all 120: −18.05 to −17.95 dB)
+- every preset loads, renders, isn't silent, doesn't clip, and is within ±1 dB of the loudness target (all 130: −18.05 to −17.95 dB)
 - **brightness rises with dynamics** for every acoustic preset, and a breath swell makes a held note louder and brighter
 - **legato glides don't click** (76 legato presets; the detector is proven on an injected −46 dBFS step)
 - **aliasing** at C6, velocity 127: below −60 dB at the preset drive with 4× oversampling
@@ -166,7 +184,10 @@ on a user preset moves it to the Recycle Bin.
   chorus / reverb, reverb tails ending at exactly zero
 - the built VST3 loads in a VST3 host, plays, automates, restores its state and switches programs
 - the C++ and JS parameter tables match exactly
-- **C++/JS parity**: 158 scenarios (every engine feature, and every factory preset) rendered by both engines agree
+- the physical engine: in tune to the cent from C2 to C6 (lips and reed), level even across the range, louder
+  and brighter with velocity, glides land, releases end in silence, a section is as loud as one player, and
+  extreme settings stay finite
+- **C++/JS parity**: 174 scenarios (every engine feature, and every factory preset) rendered by both engines agree
   to within 4·10⁻⁶ (RMS per window and peak)
 - the web build in headless Edge: every control reaches the engine, presets load, save, reload and delete, preset
   files load (including old or broken ones), the keyboard, articulations and the BREATH wheel work, and served over
@@ -182,10 +203,14 @@ synthetic worst case (32 notes × 8 players × 4× oversampling × every feature
 - Windows only for now. The code is portable JUCE, but no macOS build has been set up.
 - The PolyBLEP oscillators alias a little on very high, very loud notes (about −42 dB at C6); the presets take most of
   their brightness from the alias-free harmonic layer instead.
-- The physical-model (lip-reed / single-reed waveguide) engine has its interface in place but no sound yet.
 - The web build is tested in Edge (Chromium). Linking a preset folder needs Chrome or Edge; Safari has no Web MIDI.
   Other browsers are untested.
-- Next: the physical model (phase 7).
+- The physical engine locks the valve to the played pitch: it cannot overblow to another register or lip a
+  note out of tune the way a real horn can. Free-running lip and reed models drifted by up to several semitones
+  and jumped octaves in testing, so they were left out.
+- Changing the Engine parameter from a host automation lane: "Physical" was added as a third choice, so a lane
+  recorded before this version maps its values onto three choices instead of two (projects and presets store the
+  choice itself and are unaffected).
 
 ## Repository layout
 

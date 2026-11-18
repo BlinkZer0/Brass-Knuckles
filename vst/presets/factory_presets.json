@@ -300,6 +300,18 @@
       { "name": "Underwater Horn", "base": "horn", "params": { "muteType": 4, "muteSrc": 0, "mutePlunger": 0.4,
         "lfo2On": 1, "lfo2Rate": 0.2, "mod1Src": 2, "mod1Dst": 34, "mod1Amt": 0.35, "eqOn": 1, "eqHiGain": -8, "eqHiFreq": 3000,
         "chOn": 1, "chMix": 0.5, "chDepth": 0.8, "rvMix": 0.4, "rvDecay": 3.5, "ampLevel": -2.8 } }
+    ] },
+    { "name": "Physical", "presets": [
+      {"name": "Physical Trumpet", "base": "trumpet", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.75, "pmLip": 0.1, "pmLoss": 0.25, "pmBell": 0.55, "pmNoise": 0.06, "brsAmt": 0.15, "dynBrass": 0.9, "ampLevel": -9.2}},
+      {"name": "Physical Flugel", "base": "flugel", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.7, "pmLip": -0.35, "pmLoss": 0.35, "pmBell": 0.3, "pmNoise": 0.08, "dynBrass": 0.4, "ampLevel": -7}},
+      {"name": "Physical Trombone", "base": "trombone", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.75, "pmLip": -0.1, "pmLoss": 0.25, "pmBell": 0.45, "pmNoise": 0.05, "dynBrass": 1, "ampLevel": -9}},
+      {"name": "Physical Horn", "base": "horn", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.7, "pmLip": -0.25, "pmLoss": 0.3, "pmBell": 0.25, "pmNoise": 0.04, "dynBrass": 0.6, "rvMix": 0.25, "ampLevel": -9.9}},
+      {"name": "Physical Tuba", "base": "tuba", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.75, "pmLip": -0.2, "pmLoss": 0.3, "pmBell": 0.3, "pmNoise": 0.05, "dynBrass": 0.6, "ampLevel": -8.5}},
+      {"name": "Physical Soprano", "base": "soprano", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.7, "pmLip": 0, "pmLoss": 0.3, "pmBell": 0.55, "pmNoise": 0.12, "ampLevel": -7.9}},
+      {"name": "Physical Alto", "base": "alto", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.7, "pmLip": 0, "pmLoss": 0.3, "pmBell": 0.5, "pmNoise": 0.12, "ampLevel": -8.1}},
+      {"name": "Physical Tenor", "base": "tenor", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.7, "pmLip": -0.15, "pmLoss": 0.3, "pmBell": 0.45, "pmNoise": 0.18, "growlAmt": 0.05, "ampLevel": -7.9}},
+      {"name": "Physical Bari", "base": "bari", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.75, "pmLip": -0.2, "pmLoss": 0.3, "pmBell": 0.4, "pmNoise": 0.12, "ampLevel": -8.8}},
+      {"name": "Physical Brass Section", "base": "trumpet", "params": {"engineMode": 2, "dynRange": 10, "dynBrCurve": 0.4, "osc1AmpSus": 1, "osc1AmpDec": 0.3, "pmBlow": 0.75, "pmLip": 0.1, "pmLoss": 0.25, "pmBell": 0.5, "pmNoise": 0.05, "dynBrass": 0.9, "voiceMode": 0, "secPlayers": 4, "secDetune": 9, "secTiming": 25, "secTimbre": 0.4, "secWidth": 0.8, "rvMix": 0.22, "ampLevel": -13.4}}
     ] }
   ]
 }

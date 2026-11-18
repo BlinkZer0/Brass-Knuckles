@@ -38,6 +38,11 @@ per voice:  OSC 1-3  morph sine/tri/saw/pulse
                1x / 2x / 4x oversampled (Kaiser half-band FIRs), DC blocker, tone low-pass
           + breath noise (instrument noise band, follows dynamics and the amp env; chiff) + key click
             -> x loudness x vibrato amp x growl x flutter x lip-slur dip -> pan
+  (Engine = Physical: the oscillators / harmonic layer / lip buzz are replaced by a driven-valve waveguide:
+   valve (lips or reed) moved at OSC 1's pitch, pulse shape from lip tension and dynamics -> Bernoulli flow solved
+   against the returning bore wave (closed form, sqrt only) -> bore delay (float, one period) -> bell one-pole
+   low-pass + reflection loss, mean flow not reflected -> radiated wave (DC blocked). Blowing pressure = OSC 1
+   amp env x (0.2 + 0.8 dynamics) x Blow. The rest of the chain is unchanged.)
 bus:        sum -> body/bell formants (4 biquads per instrument, mix/shift/reso)
             -> mute (straight / cup / harmon biquads, plunger = moving SVF low-pass)
             -> patch level -> FX: drive (tube/tape, 1x/2x/4x, auto level-matched) -> 3-band EQ -> chorus
@@ -71,7 +76,7 @@ coefficients and gain are ramped per sample in between. Voices are allocated in 
 
 ## In the host
 
-- Instrument (Instrument|Synth), MIDI in, stereo out. **341 automatable parameters** with stable IDs; knob and
+- Instrument (Instrument|Synth), MIDI in, stereo out. **347 automatable parameters** with stable IDs; knob and
   envelope-point drags record as single automation gestures.
 - **Right-click any control** for the host's parameter menu (automation, link to controller). The Standalone app
   gets a small fallback menu with *Reset to default*. Shift+right-click opens DevTools.
@@ -99,12 +104,13 @@ coefficients and gain are ramped per sample in between. Voices are allocated in 
 
 | Command | Checks |
 |---|---|
-| `BrassKnucklesTests.exe` | parameter table, factory presets (ranges, 12 categories, templates resolved), preset file round trip, partial / old / garbage files, engine basics (velocity, breath silence and swell, reset controllers, polyphony limit, legato glide pitch), modeled engine (half-band filters unity, harmonic layer brightens with dynamics, spectral delay holds the top back early, brassiness adds harmonics, straight mute cuts lows, plunger closed vs open, breath noise, key click/chiff, tongue, growl), every preset renders (not silent, no clipping, tail ends), brass checks, aliasing |
+| `BrassKnucklesTests.exe` | parameter table, factory presets (ranges, 13 categories, templates resolved), preset file round trip, partial / old / garbage files, engine basics (velocity, breath silence and swell, reset controllers, polyphony limit, legato glide pitch), modeled engine (half-band filters unity, harmonic layer brightens with dynamics, spectral delay holds the top back early, brassiness adds harmonics, straight mute cuts lows, plunger closed vs open, breath noise, key click/chiff, tongue, growl), every preset renders (not silent, no clipping, tail ends), brass checks, aliasing |
 | `BrassKnucklesTests.exe --brass` | per preset: harmonic centroid (brightness of the tone, ignoring breath noise) rises with velocity (≥8% per step), RMS rises with velocity, a breath swell makes a held note louder **and** brighter; plus the aliasing check: C6 at velocity 127, the brassiness stage fed by the harmonic layer, inharmonic energy below 18 kHz < −60 dB at the preset's drive and < −50 dB at full drive with 4× |
 | `BrassKnucklesTests.exe --host-check "<path>\Brass Knuckles.vst3"` | loads the built VST3 like a DAW: scans as an instrument, all parameters named, MIDI + breath CC make sound while parameters are automated, state restores exactly, programs switch |
 | `BrassKnucklesTests.exe` (Phase 3 part) | keyswitches are silent and latch; fall bends down after release and ends; doit bends up; scoop / rip start below; shake trills; normal resets; keyswitches off = the key plays; auto scoop / no scoop / auto fall; 4 section players: one note, decorrelated stereo, level within 3 dB of one player; 32 notes × 8 players fit the pool; MPE member-channel vs master bend; analog unison width and blat |
 | `BrassKnucklesTests.exe` (Phase 4 part) | LFO → pitch wobbles; via mod wheel gates it; random → pan places notes apart; synced 1/8 LFO gives 8 gates in 2 s at 120 BPM; mod wheel → plunger (global destination); reverb tail exists, is level-matched and ends at exactly 0; drive is level-matched and adds upper harmonics; EQ low shelf; chorus decorrelates and keeps the level; width 0 = mono, 2 = wider |
-| `BrassKnucklesTests.exe` (Phase 5 part) | exactly 120 presets, 10 per category, unique names; every preset within ±1 dB of −18 dB; legato click check (below); the brass checks measure each preset's tone (1 player, no vibrato, routes, breath noise or growl) so detune / pitch modulation / noise don't hide the dynamic response |
+| `BrassKnucklesTests.exe` (Phase 7 part) | physical engine, lips (trumpet) and reed (alto): C2..C6 in tune within 3 cents (DFT, 1-cent steps; currently 0), level spread < 6 dB (currently < 1), velocity 30 / 80 / 127 each ≥ 3 dB louder and ≥ 8% brighter (harmonic centroid); legato glide lands within 3 cents and the release ends at exactly 0; 4 players within 3 dB of one; full blow / no loss / open bell / full turbulence / lip ±1 / both valves at notes 21, 60, 108 with breath swells stay finite and below full scale |
+| `BrassKnucklesTests.exe` (Phase 5 part) | exactly 130 presets (12 × 10 + 10 Physical), 10 per category, unique names; every preset within ±1 dB of −18 dB; legato click check (below); the brass checks measure each preset's tone (1 player, no vibrato, routes, breath noise or growl) so detune / pitch modulation / noise don't hide the dynamic response |
 | `BrassKnucklesTests.exe --clicks` | every legato preset (76) plays the legato phrase with its deliberate transients and vibrato off, at 4×; the energy above 16 kHz (4th-order high-pass) in windows of two periods of the lowest note, around each note change, must not stick out above both sides by more than 4×. Detector check: a −46 dBFS step at a note change of a clean sine line scores ~10 |
 | `BrassKnucklesTests.exe --hf "<Category/Name>" t0 t1` | high-band level in 2 ms windows (diagnostics for the click check) |
 | `BrassKnucklesTests.exe --bench` | 32 notes with every per-voice feature (3 oscillators, 32 harmonics, LP24, brassiness, transients, noise, growl, flutter) + body + plunger + every FX + both LFOs + 12 routes: 15% of one core at 1×, 19% at 4×. **Worst case, 32 notes × 8 players × 4×: 88%**; 16 notes × 8 players: 44%. Then every multi-player factory preset with a 12-note chord: 3-25% |
@@ -116,8 +122,8 @@ coefficients and gain are ramped per sample in between. Voices are allocated in 
 | `powershell -File tests\level-match.ps1` | re-renders every preset and rewrites its `ampLevel` to the loudness target |
 
 | `BrassKnucklesTests.exe --parity tests\parity_scenarios.json` | renders the parity scenarios with the C++ engine, prints RMS per window + peak as JSON |
-| `powershell -File tests\run-parity.ps1 [-Tolerance 1e-4] [-Full]` | **C++/JS parity**: 158 scenarios (38 feature scenarios covering every engine path: dynamics, breath, MPE, articulations, sections, analog, mutes, plunger, LFOs, matrix, FX, raw MIDI routing, and one phrase per factory preset) rendered by the C++ engine and by `dsp-worklet.js` in headless Edge; RMS of each channel in 16 windows and the peak must agree within the tolerance. Currently worst 3.5·10⁻⁶. Also prints each engine's render speed |
-| `powershell -File tests\run-ui-tests.ps1` | builds `web/index.html` and drives it in headless Edge, twice: from disk (ScriptProcessor) and served over http (AudioWorklet, real time). 35 checks from disk, 37 served: start-up without errors, bridge config, 120 presets, every parameter has a control, all 8 pages, knob wheel / double-click and a select reach the host and the DSP, preset step / browse / save / replace / reload / delete, `.bkpreset` file load (old version, unknown and out-of-range values) and refusal of a foreign file, on-screen and computer keys send MIDI, articulation buttons, BREATH wheel, PANIC, the page's DSP renders the loaded sound; served: the AudioWorklet plays a note |
+| `powershell -File tests\run-parity.ps1 [-Tolerance 1e-4] [-Full]` | **C++/JS parity**: 174 scenarios (44 feature scenarios, including the physical engine with both valves, sections, MPE, articulations and extreme settings, covering every engine path: dynamics, breath, MPE, articulations, sections, analog, mutes, plunger, LFOs, matrix, FX, raw MIDI routing, and one phrase per factory preset) rendered by the C++ engine and by `dsp-worklet.js` in headless Edge; RMS of each channel in 16 windows and the peak must agree within the tolerance. Currently worst 3.5·10⁻⁶. Also prints each engine's render speed |
+| `powershell -File tests\run-ui-tests.ps1` | builds `web/index.html` and drives it in headless Edge, twice: from disk (ScriptProcessor) and served over http (AudioWorklet, real time). 36 checks from disk, 38 served: start-up without errors, bridge config, 120 presets, every parameter has a control, all 8 pages, knob wheel / double-click and a select reach the host and the DSP, preset step / browse / save / replace / reload / delete, `.bkpreset` file load (old version, unknown and out-of-range values) and refusal of a foreign file, on-screen and computer keys send MIDI, articulation buttons, BREATH wheel, PANIC, the page's DSP renders the loaded sound and a Physical preset; served: the AudioWorklet plays a note |
 | `node tests\js-bench.js` | JS engine speed (Node runs the same V8 engine as Chrome / Edge): solo and section presets, chords, the 32 × 8 × 4× worst case |
 | `node tests\parity-runner.js` | the JS half of the parity test without Edge (prints JSON; `parity-compare.js cpp.json js.json` compares) |
 
@@ -144,7 +150,7 @@ right before the bridge (`engine-juce.js`), the factory presets (`FACTORY_JSON`)
 ```
 CMakeLists.txt  build.bat  install.bat
 Source/
-  Params.h                   parameter table (341 params; mirrors ui/js/params.js)
+  Params.h                   parameter table (347 params; mirrors ui/js/params.js)
   SynthEngine.h              engine: voices, note groups, dynamics, vibrato, glide, voice modes
   dsp/Common.h               RNG, curves, PolyBLEP, TPT SVF
   dsp/Envelope.h             DAHDSR with per-segment curves (control rate)
@@ -153,7 +159,7 @@ Source/
   dsp/Oversampler.h          Kaiser half-band FIRs (2x / 4x), brassiness shapers
   dsp/Filters.h              RBJ biquads (body, mutes)
   dsp/Instruments.h          instrument models (spectrum, slopes, body, noise) and mute models
-  dsp/PhysModel.h            physical-model voice: interface stub (phase 7)
+  dsp/PhysModel.h            physical model (Engine = Physical): driven-valve waveguide state and helpers
   dsp/Lfo.h                  LFO shapes, sync divisions
   dsp/Fx.h                   chorus, FDN reverb, anti-denormal flush
   EngineParamsFromValues.h   parameter values -> engine snapshot (plugin + tests)

@@ -22,8 +22,31 @@
     <header class="topbar">
       <div class="brand">
         <svg class="brand-logo" viewBox="0 0 34 34" aria-hidden="true">
-          <circle class="bl-ring" cx="17" cy="17" r="14.5"/>
-          <path class="bl-bell" d="M7 21 Q15 19 19 13 L27 9 L27 25 L19 21 Q15 22 7 21 Z"/>
+          <defs>
+            <linearGradient id="bk-metal" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" class="bk-s1"/>
+              <stop offset="55%" class="bk-s2"/>
+              <stop offset="100%" class="bk-s3"/>
+            </linearGradient>
+            <mask id="bk-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="34" height="34">
+              <g fill="#fff">
+                <circle cx="6.65" cy="12" r="3.7"/><circle cx="13.55" cy="12" r="3.7"/>
+                <circle cx="20.45" cy="12" r="3.7"/><circle cx="27.35" cy="12" r="3.7"/>
+                <rect x="3" y="12" width="28" height="5"/>
+                <path d="M3 16 L31 16 Q31.5 22.5 24 25.6 Q17 27.6 10 25.6 Q2.5 22.5 3 16 Z"/>
+              </g>
+              <g fill="#000">
+                <circle cx="6.65" cy="12" r="2"/><circle cx="13.55" cy="12" r="2"/>
+                <circle cx="20.45" cy="12" r="2"/><circle cx="27.35" cy="12" r="2"/>
+                <path d="M8 19.6 Q17 22.6 26 19.6 Q24.4 23 17 24 Q9.6 23 8 19.6 Z"/>
+              </g>
+            </mask>
+          </defs>
+          <rect class="bl-metal" x="0" y="0" width="34" height="34" mask="url(#bk-mask)"/>
+          <g class="bl-bevel">
+            <circle cx="6.65" cy="12" r="2"/><circle cx="13.55" cy="12" r="2"/>
+            <circle cx="20.45" cy="12" r="2"/><circle cx="27.35" cy="12" r="2"/>
+          </g>
         </svg>
         <div class="brand-text">
           <span class="brand-mark">BRASS KNUCKLES</span>

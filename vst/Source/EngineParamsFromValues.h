@@ -204,6 +204,13 @@ EngineParams makeEngineParams (GetValue&& get)
     p.rvMix     = num (rvMix);
     p.stWidth   = num (stWidth);
 
+    p.pmType  = choice (pmType, 2);
+    p.pmBlow  = num (pmBlow);
+    p.pmLip   = num (pmLip);
+    p.pmLoss  = num (pmLoss);
+    p.pmBell  = num (pmBell);
+    p.pmNoise = num (pmNoise);
+
     p.vibDepth = num (vibDepth);
     p.vibAmp   = num (vibAmp);
     p.vibRate  = num (vibRate);

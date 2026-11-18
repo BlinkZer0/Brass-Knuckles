@@ -531,6 +531,7 @@ int runBrassChecks (bool verbose)
         // upper harmonics out of the measurement windows), no vibrato, no matrix routes
         auto v = presetValues (p);
         v[secPlayers] = 1; v[vibDepth] = 0; v[vibAmp] = 0; v[brNoise] = 0; v[growlAmt] = 0;
+        v[pmNoise] = 0;   // the physical model's turbulence is breath noise too
         for (int s = 0; s < kNumModSlotsParam; ++s) v[(size_t) modParam (s, 0)] = 0;
         const bool acoustic = std::lround (v[instrument]) != 9;
         const int n = auditionNote (v);

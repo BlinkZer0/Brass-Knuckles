@@ -1,7 +1,30 @@
 # Brass Knuckles — build plan
 
-Status (2026-11-18): plan approved for phases 1-7. **Phases 1-6 done** (VST v1.0 release candidate + web build),
-awaiting hand-testing before Phase 7 (physical model).
+Status (2026-11-18): plan approved for phases 1-7. **All seven phases done** (VST v1.0 release candidate, web build,
+physical-model engine); awaiting hand-testing.
+
+Phase 7 notes:
+- Engine = Physical (third choice, appended) + 6 parameters appended after stWidth (pmType, pmBlow, pmLip, pmLoss,
+  pmBell, pmNoise; 347 total). 10 presets in a new "Physical" category, appended after the 120 (program numbers of
+  the existing presets unchanged).
+- Prototyped in Node first (pitch by 1-cent DFT search, odd-harmonic share to catch octave jumps, onset, level,
+  harmonic centroid vs pressure):
+  - STK-style lip filter in a delay loop: silent below ~G4 without excitation; with noise, pitch off by hundreds
+    of cents. Explicit mass-spring lips + Bernoulli flow + cylindrical bore: oscillates everywhere but plays
+    300-700 cents sharp, lip-dominated, pressure-dependent.
+  - Saxofony-style reed on a two-delay bore: in tune within ~15 cents but overblows to the octave at many
+    note / pressure / blow-position combinations, and is slow to speak at moderate pressure.
+  - Chosen: **driven valve** (lips / reed moved at the played pitch, Bernoulli flow solved against the bore wave in
+    closed form, bore = one-period delay with a bell one-pole low-pass, loss and a DC blocker in the reflection).
+    In tune by construction; level even across the range (±1 dB C2..C6); louder and brighter with pressure.
+    Brightness for the lips comes from the closure shape (looser at high dynamics); a sharper pulse measured
+    darker, because the bore then limits the flow during most of the open phase.
+- Bore buffers: one float buffer per voice (power of two >= sr / 20 Hz), one pool allocated in prepare().
+  Float storage, a rotating phasor for the valve and only + - * / sqrt in the loop keep C++ and JS identical
+  (174 parity scenarios, worst 3.5e-6).
+- Brass checks treat pmNoise as breath noise (switched off for the measurement).
+- CPU: the physical voice is cheaper than the modeled one (about 0.5% of a core per phrase in C++; JS 7% for a
+  12-note chord, 16% for the 4-player section preset).
 
 Phase 6 notes:
 - `dsp-worklet.js` is a line-for-line port of `SynthEngine.h` + `dsp/*.h`; parameter values are rounded to float32
@@ -157,4 +180,4 @@ vst/
    × 8 players × 4× OS), README with screenshots and breath controller setup.
 6. **Web build.** JS twin `dsp-worklet.js`, `web-host.js`, `build-web.ps1`, `start.bat`/`serve.ps1`, parity
    scenarios and `run-parity.ps1`, headless UI tests.
-7. **Later.** Lip-reed / single-reed waveguide voice behind the stubbed interface.
+7. **Physical model.** Lip-reed / single-reed voice as a third engine (driven-valve waveguide; see the Phase 7 notes).

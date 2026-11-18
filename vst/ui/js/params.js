@@ -7,7 +7,8 @@
 
 const INSTRUMENTS = ['Trumpet', 'Flugelhorn', 'Trombone', 'French Horn', 'Tuba',
                      'Soprano Sax', 'Alto Sax', 'Tenor Sax', 'Baritone Sax', 'Synth'];
-const ENGINE_MODES = ['Modeled', 'Analog'];
+const ENGINE_MODES = ['Modeled', 'Analog', 'Physical'];
+const PM_TYPES = ['Auto', 'Lips', 'Reed'];
 const VOICE_MODES = ['Poly', 'Mono', 'Legato'];
 const GLIDE_MODES = ['Always', 'Legato'];
 const OVERSAMPLE = ['1x', '2x', '4x'];
@@ -315,6 +316,13 @@ const PARAM_DEFS = [
   P('rvDamp', 'Damping', 'reverb', 0, 1, 0.5, '%'),
   P('rvMix', 'Mix', 'reverb', 0, 1, 0.2, '%'),
   P('stWidth', 'Width', 'output', 0, 2, 1, '%'),
+  // ---- physical model (phase 7, appended) ----
+  C('pmType', 'Valve', 'phys', PM_TYPES, 0),
+  P('pmBlow', 'Blow', 'phys', 0, 1, 0.7, '%'),
+  P('pmLip', 'Lip/Reed', 'phys', -1, 1, 0, 'bip', BIP),
+  P('pmLoss', 'Bore Loss', 'phys', 0, 1, 0.3, '%'),
+  P('pmBell', 'Bell', 'phys', 0, 1, 0.5, '%'),
+  P('pmNoise', 'Turbulence', 'phys', 0, 1, 0.1, '%'),
 ];
 
 const PARAM_BY_ID = Object.fromEntries(PARAM_DEFS.map(d => [d.id, d]));

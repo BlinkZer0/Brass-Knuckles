@@ -87,8 +87,11 @@ button { font-family: inherit; color: inherit; }
 .topbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; line-height: 1.1; }
 .brand-logo { width: 34px; height: 34px; flex: none; }
-.brand-logo .bl-ring { fill: none; stroke: var(--accent); stroke-width: 2.4; }
-.brand-logo .bl-bell { fill: var(--accent-bg); stroke: var(--accent-hi); stroke-width: 1.4; }
+.brand-logo .bl-metal { fill: url(#bk-metal); }
+.brand-logo .bk-s1 { stop-color: var(--accent-hi); }
+.brand-logo .bk-s2 { stop-color: var(--accent); }
+.brand-logo .bk-s3 { stop-color: #9c7a2f; }
+.brand-logo .bl-bevel { fill: none; stroke: #9c7a2f; stroke-width: 0.7; }
 .brand-text { display: flex; flex-direction: column; }
 .brand-mark {
   font-size: 19px; font-weight: 800; letter-spacing: 0.16em;

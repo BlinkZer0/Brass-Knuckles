@@ -40,6 +40,8 @@ bench('Shout Section, 4-note chord', preset('Shout Section'), [60, 64, 67, 70], 
 bench('Tenor Sax, 1 note', preset('Tenor Sax'), [55], 3);
 bench('Wagner Horns, 12-note chord', preset('Wagner Horns'), chord12, 3);
 bench('Shout Section, 12-note chord', preset('Shout Section'), chord12, 3);
+bench('Physical Trumpet, 12-note chord', Object.assign({}, preset('Physical Trumpet'), { voiceMode: 0 }), chord12, 3);
+bench('Physical Brass Section, 12-note chord', preset('Physical Brass Section'), chord12, 3);
 bench('Blat Brass, 12-note chord', preset('Blat Brass'), chord12, 3);
 if (!process.argv.includes('--quick'))
   bench('worst case: 32 notes x 8 players x 4x, all on', {

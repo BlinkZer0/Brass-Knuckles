@@ -61,13 +61,16 @@ static void testParamTable()
     CHECK (defs[(size_t) stWidth].id == "stWidth");
     CHECK (defs[(size_t) dynBreathCC].id == "dynBreathCC" && defs[(size_t) vibWheel].id == "vibWheel");
     CHECK (defs[(size_t) master].noPreset);
+    // phase 7 appended after stWidth; Physical appended to the engine choices
+    CHECK (defs[(size_t) pmType].id == "pmType" && defs[(size_t) pmNoise].id == "pmNoise" && pmType == stWidth + 1);
+    CHECK (defs[(size_t) engineMode].choices.size() == 3 && defs[(size_t) engineMode].choices[2] == "Physical");
 }
 
 static void testFactoryPresets (const PresetManager& pm)
 {
     const auto& f = pm.factory();
     std::printf ("factory presets: %d\n", (int) f.size());
-    CHECK (f.size() == 120);
+    CHECK (f.size() == 130);   // 12 x 10 (v1.0) + 10 Physical (phase 7)
     juce::StringArray cats, names;
     std::map<juce::String, int> perCat;
     for (const auto& p : f)
@@ -87,7 +90,7 @@ static void testFactoryPresets (const PresetManager& pm)
     }
     std::printf ("categories (%d): %s\n", cats.size(), cats.joinIntoString (", ").toRawUTF8());
     const juce::StringArray expected { "Trumpet", "Flugelhorn", "Trombone", "French Horn", "Tuba/Low Brass", "Soprano Sax",
-                                       "Alto Sax", "Tenor Sax", "Baritone Sax", "Sections", "Synth Brass", "Hybrid/FX" };
+                                       "Alto Sax", "Tenor Sax", "Baritone Sax", "Sections", "Synth Brass", "Hybrid/FX", "Physical" };
     CHECK (cats == expected);
     for (const auto& c : expected) CHECK (perCat[c] == 10);
     // templates resolved: Lead Trumpet inherits acoustic -> brass
@@ -635,6 +638,98 @@ static void testModulationFx()
     }
 }
 
+// ---- physical model (Engine = Physical) ---------------------------------------------------
+// Strongest frequency within +-50 cents of f (1-cent steps, DFT), in cents relative to f.
+static double centsOff (const Audio& a, double from, double to, double f)
+{
+    double best = -1; int bestC = 0;
+    for (int c = -50; c <= 50; ++c)
+    {
+        const double w = kTwoPi * f * std::pow (2.0, c / 1200.0) / kSr;
+        double re = 0, im = 0;
+        for (int i = sec (from); i < std::min (a.size(), sec (to)); ++i) { re += a.L[(size_t) i] * std::cos (w * i); im += a.L[(size_t) i] * std::sin (w * i); }
+        if (re * re + im * im > best) { best = re * re + im * im; bestC = c; }
+    }
+    return bestC;
+}
+
+static void testPhysicalModel()
+{
+    std::printf ("physical model\n");
+    auto set = [] (Values& v, const char* id, float x) { v[(size_t) paramIndex (id)] = x; };
+    auto base = defaultValues();
+    set (base, "engineMode", 2); set (base, "vibDepth", 0); set (base, "vibAmp", 0); set (base, "brNoise", 0);
+    set (base, "bodyMix", 0); set (base, "pmNoise", 0); set (base, "osc1PEnvAmt", 0); set (base, "osc1AmpSus", 1);
+    for (const int ins : { 0, 6 })   // trumpet (lips), alto sax (reed)
+    {
+        auto v = base;
+        set (v, "instrument", (float) ins);
+        double lo = 1e9, hi = -1e9, worstCents = 0;
+        for (int note = 36; note <= 84; note += 12)
+        {
+            const auto a = render (v, { { 0, Event::On, note, 100.0 } }, 0.9);
+            const double db = 20 * std::log10 (rms (a, sec (0.4), sec (0.9)) + 1e-12);
+            lo = std::min (lo, db); hi = std::max (hi, db);
+            worstCents = std::max (worstCents, std::abs (centsOff (a, 0.4, 0.9, noteHz (note))));
+        }
+        std::printf ("     %s: C2..C6 in tune within %.0f cents, level %.1f .. %.1f dB\n", ins == 0 ? "lips" : "reed", worstCents, lo, hi);
+        CHECK (worstCents <= 3);
+        CHECK (lo > -40 && hi - lo < 6);
+        // dynamics: louder and brighter
+        double prevDb = -1e9, c30 = 0;
+        for (const int vel : { 30, 80, 127 })
+        {
+            const auto a = render (v, { { 0, Event::On, 55, (double) vel } }, 0.9);
+            const double db = 20 * std::log10 (rms (a, sec (0.4), sec (0.9)) + 1e-12);
+            const double hc = harmonicCentroid (a, sec (0.4), noteHz (55));
+            std::printf ("     %s vel %3d: %.1f dB, harmonic centroid %.2f\n", ins == 0 ? "lips" : "reed", vel, db, hc);
+            CHECK (db > prevDb + 3);
+            if (vel == 30) c30 = hc; else CHECK (hc > c30 * 1.08);
+            prevDb = db;
+        }
+    }
+    // legato glide lands on the new note; the release ends in silence
+    {
+        auto v = base;
+        set (v, "voiceMode", 2); set (v, "glideOn", 1); set (v, "glideTime", 0.1f); set (v, "osc1AmpRel", 0.1f);
+        const auto a = render (v, { { 0, Event::On, 60, 100.0 }, { sec (0.5), Event::On, 67, 100.0 }, { sec (0.52), Event::Off, 60, 0 },
+                                    { sec (1.2), Event::Off, 67, 0 } }, 1.8);
+        const double c = centsOff (a, 0.8, 1.15, noteHz (67));
+        std::printf ("     legato glide C4 -> G4: %+.0f cents at the end, tail %.1e\n", c, rms (a, sec (1.6), sec (1.8)));
+        CHECK (std::abs (c) <= 3);
+        CHECK (rms (a, sec (1.6), sec (1.8)) < 1e-6);
+    }
+    // a 4-player section is about as loud as one player
+    {
+        auto v = base;
+        const auto one = render (v, { { 0, Event::On, 60, 100.0 } }, 2.0);
+        set (v, "secPlayers", 4);
+        const auto four = render (v, { { 0, Event::On, 60, 100.0 } }, 2.0);
+        const double d = 20 * std::log10 (rms (four, sec (0.5), sec (2.0)) / rms (one, sec (0.5), sec (2.0)));
+        std::printf ("     4 players vs 1: %+.1f dB\n", d);
+        CHECK (std::abs (d) < 3);
+    }
+    // stability at the extremes: lowest / highest notes, full blow, no loss, open bell, full turbulence, both valves,
+    // breath swells, engine switched mid-note
+    {
+        bool finite = true; double pk = 0;
+        for (const float lip : { -1.0f, 1.0f })
+            for (const int ins : { 0, 6 })
+            {
+                auto v = base;
+                set (v, "instrument", (float) ins); set (v, "pmBlow", 1); set (v, "pmLoss", 0); set (v, "pmLip", lip);
+                set (v, "pmBell", 1); set (v, "pmNoise", 1); set (v, "dynBreath", 1);
+                std::vector<Event> ev { { 0, Event::On, 21, 127.0 }, { 0, Event::On, 60, 127.0 }, { 0, Event::On, 108, 127.0 } };
+                for (int k = 0; k < 20; ++k) ev.push_back ({ sec (0.05 * k), Event::CC, 2, (k % 2) ? 1.0 : 0.1 });
+                const auto a = render (v, ev, 1.2);
+                for (int i = 0; i < a.size(); ++i) if (! std::isfinite (a.L[(size_t) i]) || ! std::isfinite (a.R[(size_t) i])) finite = false;
+                pk = std::max (pk, peak (a));
+            }
+        std::printf ("     extremes: finite %s, peak %.2f\n", finite ? "yes" : "NO", pk);
+        CHECK (finite && pk <= 1.0 && pk > 0.01);
+    }
+}
+
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI init; // keeps JUCE leak checks quiet
@@ -661,6 +756,7 @@ int main (int argc, char* argv[])
     testModeledEngine();
     testPerformance();
     testModulationFx();
+    testPhysicalModel();
     testPresetRenders (pm);
     failures += runBrassChecks (false);
     failures += runAliasCheck (false);

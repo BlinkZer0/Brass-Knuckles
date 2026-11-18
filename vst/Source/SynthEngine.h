@@ -36,9 +36,10 @@
 #include "dsp/Oversampler.h"
 #include "dsp/Instruments.h"
 #include "dsp/Additive.h"
-#include "dsp/PhysModel.h"   // phase 7: interface stub, not used yet
+#include "dsp/PhysModel.h"   // Engine = Physical: driven-valve waveguide
 #include "dsp/Lfo.h"
 #include "dsp/Fx.h"
+#include <vector>
 
 namespace bk
 {
@@ -56,7 +57,8 @@ enum VoiceMode  { modePoly, modeMono, modeLegato };
 enum FilterType { fltLP12, fltLP24, fltBP };
 enum Tongue     { tongueSoft, tongueNormal, tongueHard };
 enum PlungerSrc { plKnob, plWheel, plBreath, plExpression, plAftertouch, plCC };
-enum EngineMode { engModeled, engAnalog };
+enum EngineMode { engModeled, engAnalog, engPhysical };
+enum PmValve    { pmAuto, pmLips, pmReed };
 // Keyswitch order (artKsBase + index). Fall / doit act on the release, rip / scoop on the
 // attack, shake on the sustain.
 enum Articulation { artNormal, artFall, artDoit, artRip, artShake, artScoop, kNumArticulations };
@@ -184,6 +186,10 @@ struct EngineParams
     double chRate = 0.6, chDepth = 0.4, chMix = 0.35;
     double rvDecay = 1.8, rvPre = 20, rvDamp = 0.5, rvMix = 0.2;
     double stWidth = 1;
+
+    // physical model
+    int pmType = pmAuto;
+    double pmBlow = 0.7, pmLip = 0, pmLoss = 0.3, pmBell = 0.5, pmNoise = 0.1;
 };
 
 //==============================================================================
@@ -247,6 +253,7 @@ struct Voice
     double slide = -1;               // MPE slide (CC74), -1 = not seen
     // modulation
     std::array<Lfo, kNumLfo> lfo;    // per-voice LFOs (used when an LFO is in Voice mode)
+    PhysModelVoice pmv;              // physical model (Engine = Physical)
     double rnd = 0;                  // "Random" source: drawn per note, -1..1
 
     bool active() const { return on; }
@@ -268,6 +275,15 @@ public:
         lfoSmooth    = 1 - std::exp (-kChunk / (0.002 * sr)); // square / S&H edges
         chorus.prepare (sr);
         reverb.prepare (sr);
+        {   // physical-model bores: one buffer per voice, allocated here only
+            const int size = physBufferSize (sr);
+            pmPool.assign ((size_t) kPoolSize * (size_t) size, 0.0f);
+            for (int i = 0; i < kPoolSize; ++i)
+            {
+                voices[(size_t) i].pmv.buf = pmPool.data() + (size_t) i * (size_t) size;
+                voices[(size_t) i].pmv.mask = size - 1;
+            }
+        }
         for (auto& l : lfoG) l = Lfo{};
         slotAmt.fill (0);
         fxInit = true;
@@ -830,6 +846,8 @@ private:
             v.dcX = v.dcY = v.toneZ = v.nPrev = 0;
             v.artSemis = 0;
             v.slide = -1;
+            if (P.engineMode == engPhysical) v.pmv.reset();
+            else v.pmv.pm = 0;
             for (int i = 0; i < kNumLfo; ++i)
                 v.lfo[(size_t) i].start (P.lfo[(size_t) i].retrig ? 0.0 : rng.uni(), rng);
             v.snap = true;
@@ -1276,6 +1294,7 @@ private:
         const double dtSec = n / sr;
         if (v.delayLeft > 0) { v.delayLeft -= dtSec; return; }   // section player not in yet
         const bool analog = P.engineMode == engAnalog;
+        const bool physical = P.engineMode == engPhysical;
         v.tNote += dtSec;
         v.tVib += dtSec;
         v.slurT += dtSec;
@@ -1444,15 +1463,18 @@ private:
                             + (vibCents + growlCents) / 100.0 + 0.25 * blat + 12.0 * dst[dstPitchAll];
         double tdt[kNumOsc], tlvl[kNumOsc], tshape[kNumOsc], tpw[kNumOsc], tg[kNumOsc], tk[kNumOsc];
         bool alive = false;
-        double envMain = 0, pe0 = 0, hz0 = 440;
+        double envMain = 0, pe0 = 0, hz0 = 440, blow0 = 0;
         for (int k = 0; k < kNumOsc; ++k)
         {
             const auto& O = P.osc[(size_t) k];
             auto& o = v.o[(size_t) k];
             const double aLvl = o.amp.advance (scaled (O.amp, o.ampTime, o.ampAtkTime), dtSec);
             const double tLvl = o.tmb.advance (scaled (O.tmb, o.tTime, o.tAtkTime), dtSec);
-            if (O.on && o.amp.active()) alive = true;
-            if (O.on) envMain = std::max (envMain, aLvl);
+            // Physical: the oscillators are silent; OSC 1's amp envelope is the blowing pressure
+            const bool sounding = physical ? k == 0 : O.on;
+            if (sounding && o.amp.active()) alive = true;
+            if (sounding) envMain = std::max (envMain, aLvl);
+            if (k == 0) blow0 = aLvl * o.ampScale;
 
             // pitch envelope: start offset gliding to 0 (scoop), plus a blip on the attack
             double pe = O.pAmt * o.pScale * v.tgScoop * (1 - curveShape (std::min (v.tNote / (O.pTime * o.pTime), 1.0), O.pCrv));
@@ -1468,14 +1490,14 @@ private:
             tk[k] = SVF::kFor (O.res * 0.9);
             tshape[k] = clampd (O.shape + tLvl * O.tShape * o.tScale + 3.0 * dst[dstOsc1Shape + k], 0.0, 3.0);
             tpw[k] = clampd (O.pw + 0.45 * dst[dstOsc1PW + k], 0.05, 0.95);
-            tlvl[k] = O.on ? O.level * aLvl * o.ampScale * clampd (1 + dst[dstOsc1Level + k], 0.0, 2.0) : 0.0;
+            tlvl[k] = O.on && ! physical ? O.level * aLvl * o.ampScale * clampd (1 + dst[dstOsc1Level + k], 0.0, 2.0) : 0.0;
         }
 
         // ---- additive harmonic layer: node envelopes + harmonic amplitudes -----------
         double tA[kMaxPartials];
         int addCount = 0;
         double tdtA = v.add.dt;
-        const bool addOn = P.addOn && ! analog;   // the Analog engine is purely subtractive
+        const bool addOn = P.addOn && ! analog && ! physical;   // Analog: purely subtractive; Physical: the bore makes the spectrum
         if (addOn)
         {
             const auto& T = addTables();
@@ -1566,7 +1588,7 @@ private:
         if (extras)
         {
             const double tChiff = v.chiffPeak * std::exp (-v.tTrans / 0.035);
-            tLip   = v.lipPeak * std::exp (-v.tTrans / std::max (P.lipDecay * v.tgDecay, 0.001))
+            tLip   = physical ? 0.0 : v.lipPeak * std::exp (-v.tTrans / std::max (P.lipDecay * v.tgDecay, 0.001))
                      * clampd (1 + dst[dstLipBuzz], 0.0, 3.0) * plScale;
             tClick = v.clickPeak * std::exp (-v.tClick / 0.005) * plScale;
             tNoise = (P.brNoise * (1 - P.brDyn + P.brDyn * d) * envMain * (1 + 2 * flutNoise) * clampd (1 + dst[dstBreathNoise], 0.0, 3.0)
@@ -1617,8 +1639,26 @@ private:
             v.panMod = dst[dstPan] != 0;   // one more update after the route goes quiet, back to the player's place
         }
 
+        // ---- physical model: valve frequency, mouth pressure, pulse shape, bell -------------
+        double tPmDt = v.pmv.dt, tPm = 0, tPmSh = v.pmv.sh, tPmBell = v.pmv.bell;
+        bool reedValve = false;
+        double pmR = 0.95, pmNz = 0;
+        if (physical)
+        {
+            reedValve = P.pmType == pmReed || (P.pmType == pmAuto && P.instrument >= 5 && P.instrument <= 8);
+            tPmDt = std::min (std::max (hz0, kPmMinHz) / sr, 0.25);
+            tPm = clampd (P.pmBlow * blow0 * (0.2 + 0.8 * d), 0.0, 1.5);
+            const double tension = std::pow (2.0, 2.0 * P.pmLip);   // lip tension / reed stiffness
+            tPmSh = reedValve ? (1 + 20 * tPm * tPm) * tension
+                              : 8 * tension * std::pow (2.0, -0.6 * bright);   // looser closure = brighter
+            tPmBell = physBellCoef (400.0 * std::pow (2.0, P.pmBell * 5.0 + (reedValve ? 0.35 : 0.2) * bright), sr);
+            pmR = 0.995 - 0.15 * P.pmLoss;
+            pmNz = 0.5 * P.pmNoise;
+        }
+
         if (v.snap)   // fresh voice: pitch / filters start at their targets; levels ramp up from 0
         {
+            v.pmv.dt = tPmDt; v.pmv.sh = tPmSh; v.pmv.bell = tPmBell;
             for (int k = 0; k < kNumOsc; ++k)
             {
                 auto& o = v.o[(size_t) k];
@@ -1645,7 +1685,7 @@ private:
             pw[k] = o.pw;    dpw[k] = (tpw[k] - o.pw) * inv;
             g[k] = o.g;      dg[k] = (tg[k] - o.g) * inv;
             kk[k] = o.k;     dkk[k] = (tk[k] - o.k) * inv;
-            run[k] = P.osc[(size_t) k].on || o.lvl > 0;
+            run[k] = (P.osc[(size_t) k].on && ! physical) || o.lvl > 0;
         }
         double aA[kMaxPartials], daA[kMaxPartials];
         for (int k = 0; k < addRun; ++k) { aA[k] = v.add.amp[k]; daA[k] = (tA[k] - aA[k]) * inv; }
@@ -1663,10 +1703,53 @@ private:
         const bool flt = P.fltOn;
         const int ftype = P.fltType;
         const double lipPitch = P.lipPitch;
+        // physical model ramps (pressure from the last chunk's value; frequency / shape / bell likewise)
+        auto& PM = v.pmv;
+        double pdt = PM.dt, ppm = PM.pm, psh = PM.sh, pbell = PM.bell;
+        const double dpdt = (tPmDt - pdt) * inv, dppm = (tPm - ppm) * inv, dpsh = (tPmSh - psh) * inv, dpbell = (tPmBell - pbell) * inv;
+        const double prc = std::cos (kPi * (PM.dt + tPmDt)), prs = std::sin (kPi * (PM.dt + tPmDt));
+        double qc = PM.c, qs = PM.s, plp = PM.lp, pdx = PM.dcx, pdy = PM.dcy, pox = PM.ox, poy = PM.oy;
+        int bw = PM.w;
+        const int pmask = PM.mask;
+        float* const pbuf = PM.buf;
+        const bool needNoise = noiseOn || lipOn || clickOn || (physical && pmNz > 0);
 
         for (int i = 0; i < n; ++i)
         {
             double s = 0;
+            const double wn = needNoise ? v.nrng.bi() : 0.0;
+            if (physical)
+            {
+                pdt += dpdt; ppm += dppm; psh += dpsh; pbell += dpbell;
+                const double nc = qc * prc - qs * prs;          // valve phase: one rotation step
+                qs = qs * prc + qc * prs;
+                qc = nc;
+                const double b = 0.5 - 0.5 * qc;                // 0 (closed) .. 1 (open), once per period
+                const double pulse = b / (1 + psh * (1 - b));
+                const double pmN = ppm * (1 + pmNz * wn);       // mouth pressure with turbulence
+                double h;
+                if (reedValve) { h = 1 - (0.5 + 0.9 * pmN) * pulse; if (h < 0) h = 0; }
+                else h = 10.0 * (0.1 + pmN) * pulse;
+                double T = 1 / pdt - (1 - pbell) / pbell;       // one period, minus the bell filter's delay
+                if (T < 2) T = 2;
+                const double rp = bw + 1 - T;
+                const int i0 = (int) std::floor (rp);
+                const double fr = rp - i0;
+                const double x0 = pbuf[i0 & pmask], x1 = pbuf[(i0 + 1) & pmask];
+                const double back = x0 + (x1 - x0) * fr;        // wave arriving at the bell
+                plp += (back - plp) * pbell;
+                const double hp = plp - pdx + dcR * pdy; pdx = plp; pdy = hp;
+                const double pin = pmR * hp;                    // reflected wave back at the mouthpiece
+                const double a = pmN - 2 * pin;
+                double dp;                                      // pressure drop over the valve (Bernoulli flow)
+                if (a >= 0) { const double q = 0.5 * (std::sqrt (h * h + 4 * a) - h); dp = q * q; }
+                else        { const double q = 0.5 * (std::sqrt (h * h - 4 * a) - h); dp = -q * q; }
+                const double pout = pmN - dp - pin;
+                bw = (bw + 1) & pmask;
+                pbuf[bw] = (float) pout;
+                const double y = back - pox + dcR * poy; pox = back; poy = y;
+                s += y * kPmGain;
+            }
             for (int k = 0; k < kNumOsc; ++k)
             {
                 if (! run[k]) continue;
@@ -1693,7 +1776,6 @@ private:
                 }
                 s += acc;
             }
-            const double wn = noiseOn || lipOn || clickOn ? v.nrng.bi() : 0.0;
             if (lipOn)
             {
                 lipL += dlipL; lipG += dlipG;
@@ -1739,6 +1821,13 @@ private:
             mixR[(size_t) i] += y * pr;
         }
         v.panL = tPanL; v.panR = tPanR;
+        if (physical)
+        {
+            const double len = 1.0 / std::sqrt (qc * qc + qs * qs);   // keep the valve phasor on the unit circle
+            PM.c = qc * len; PM.s = qs * len;
+            PM.lp = plp; PM.dcx = pdx; PM.dcy = pdy; PM.ox = pox; PM.oy = poy; PM.w = bw;
+        }
+        PM.dt = tPmDt; PM.pm = tPm; PM.sh = tPmSh; PM.bell = tPmBell;
 
         for (int k = 0; k < kNumOsc; ++k)
         {
@@ -1771,6 +1860,7 @@ private:
     }
 
     std::array<Voice, kPoolSize> voices;
+    std::vector<float> pmPool;                           // physical-model bores (all voices)
     std::array<double, kChunk> mixL {}, mixR {};
     std::array<int, 128> keys {};
     int keyCount = 0;

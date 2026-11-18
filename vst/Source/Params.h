@@ -83,6 +83,8 @@ enum ParamIndex
     chOn, chRate, chDepth, chMix,
     rvOn, rvType, rvDecay, rvPre, rvDamp, rvMix,
     stWidth,
+    // ---- physical model (phase 7, appended) ----------------------------------------
+    pmType, pmBlow, pmLip, pmLoss, pmBell, pmNoise,
     kNumParams
 };
 
@@ -110,7 +112,8 @@ struct ParamDef
 // Choice lists: the order is the stored value; must match params.js and the engine enums.
 inline juce::StringArray instrumentChoices() { return { "Trumpet", "Flugelhorn", "Trombone", "French Horn", "Tuba",
                                                         "Soprano Sax", "Alto Sax", "Tenor Sax", "Baritone Sax", "Synth" }; }
-inline juce::StringArray engineChoices()     { return { "Modeled", "Analog" }; }
+inline juce::StringArray engineChoices()     { return { "Modeled", "Analog", "Physical" }; }   // appended only
+inline juce::StringArray pmTypeChoices()     { return { "Auto", "Lips", "Reed" }; }
 inline juce::StringArray voiceModeChoices()  { return { "Poly", "Mono", "Legato" }; }
 inline juce::StringArray glideModeChoices()  { return { "Always", "Legato" }; }
 inline juce::StringArray oversampleChoices() { return { "1x", "2x", "4x" }; }
@@ -419,6 +422,13 @@ inline const std::vector<ParamDef>& paramDefs()
         flt  ("rvDamp", "Reverb Damping", 0, 1, 0.5f, Unit::Percent);
         flt  ("rvMix", "Reverb Mix", 0, 1, 0.2f, Unit::Percent);
         flt  ("stWidth", "Stereo Width", 0, 2, 1, Unit::Percent);
+        // physical model (Engine = Physical): only used by that engine, so the defaults are neutral for v1.0
+        choice ("pmType", "PM Valve", pmTypeChoices(), 0);
+        flt  ("pmBlow", "PM Blow", 0, 1, 0.7f, Unit::Percent);
+        flt  ("pmLip", "PM Lip / Reed", -1, 1, 0, Unit::BipolarPercent);
+        flt  ("pmLoss", "PM Bore Loss", 0, 1, 0.3f, Unit::Percent);
+        flt  ("pmBell", "PM Bell", 0, 1, 0.5f, Unit::Percent);
+        flt  ("pmNoise", "PM Turbulence", 0, 1, 0.1f, Unit::Percent);
 
         jassert ((int) d.size() == kNumParams);
         return d;

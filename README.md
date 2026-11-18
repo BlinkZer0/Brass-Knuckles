@@ -8,7 +8,7 @@ moment after the fundamental, and a breath controller swells and brightens a hel
 | Build | Where | Status |
 |---|---|---|
 | **VST3 plugin** + Standalone | [`vst/`](vst/README.md) | v1.0 release candidate + physical-model engine: 130 presets, all automated checks passing |
-| **Web build** | [`web/index.html`](web/index.html) | One self-contained HTML file: the same UI, a JS twin of the engine (checked against the C++ engine by a parity test), Web MIDI |
+| **Web build** | [`web/index.html`](https://blinkzer0.github.io/Brass-Knuckles/) | One self-contained HTML file: the same UI, a JS twin of the engine (checked against the C++ engine by a parity test), Web MIDI |
 
 ![Brass Knuckles: the PLAY page with the preset browser, instrument, dynamics, vibrato, voice and output panels, and the keyboard with the trumpet's range highlighted](docs/screenshots/play.png)
 

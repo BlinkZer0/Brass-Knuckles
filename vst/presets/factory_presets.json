@@ -1,0 +1,116 @@
+{
+  "format": "Brass Knuckles Factory Presets",
+  "version": 1,
+  "note": "preset values = parameter defaults <- template chain (base first) <- preset params. Param ids as in vst/Source/Params.h. ampLevel is set by tests/level-match.ps1.",
+  "templates": {
+    "acoustic": { "params": {
+      "voiceMode": 2, "glideOn": 1, "glideMode": 1, "glideTime": 0.045, "glideCurve": 0.4, "slurDip": 0.35, "polyphony": 32, "oversample": 1,
+      "dynBreath": 1, "dynVel": 0.25, "dynCurve": 0, "dynRange": 26, "dynBright": 3, "dynBrCurve": 0.5, "dynAttack": 0.6, "dynSmooth": 0.03,
+      "vibDepth": 12, "vibAmp": 0.12, "vibRate": 5.4, "vibDelay": 0.35, "vibFade": 0.7, "vibDrift": 0.4, "vibWheel": 0.6,
+
+      "addOn": 1, "addLevel": 0.75, "addPartials": 32, "addTilt": 0, "addOddEven": 0, "addSpecDly": 0.45, "addDynSpread": 0.85, "addCurve": 0.4,
+      "addLoAtk": 0.025, "addLoDec": 0.25, "addLoSus": 0.95, "addLoRel": 0.12, "addLoLvl": 1,
+      "addMidAtk": 0.035, "addMidDec": 0.3, "addMidSus": 0.85, "addMidRel": 0.1, "addMidLvl": 0.9,
+      "addHiAtk": 0.05, "addHiDec": 0.3, "addHiSus": 0.7, "addHiRel": 0.07, "addHiLvl": 0.8,
+
+      "osc1On": 1, "osc1Shape": 2, "osc1Level": 0.35, "osc1Cut": 2.5, "osc1Res": 0.15,
+      "osc1AmpAtk": 0.035, "osc1AmpAtkCrv": 0.5, "osc1AmpDec": 0.4, "osc1AmpSus": 0.85, "osc1AmpRel": 0.12, "osc1AmpRelCrv": 0.6,
+      "osc1PEnvAmt": -25, "osc1PEnvTime": 0.05, "osc1PEnvCrv": 0.6, "osc1BlipAmt": 10, "osc1BlipTime": 0.025, "osc1PEnvVel": 0.5,
+      "osc1TEnvAtk": 0.03, "osc1TEnvDec": 0.3, "osc1TEnvSus": 0.4, "osc1TEnvCut": 1.5, "osc1TEnvVel": 0.6,
+      "osc2On": 1, "osc2Shape": 0, "osc2Level": 0.22, "osc2Cut": 64,
+      "osc2AmpAtk": 0.045, "osc2AmpAtkCrv": 0.5, "osc2AmpDec": 0.4, "osc2AmpSus": 0.9, "osc2AmpRel": 0.15, "osc2AmpRelCrv": 0.6,
+      "osc2PEnvAmt": -25, "osc2PEnvTime": 0.05, "osc2PEnvCrv": 0.6, "osc2PEnvVel": 0.5,
+
+      "brsAmt": 0.15, "brsType": 0, "brsTone": 0.8, "dynBrass": 0.6,
+      "lipAmt": 0.35, "lipTone": 0.45, "lipDecay": 0.03, "lipPitch": 0.7,
+      "brNoise": 0.06, "brTone": 0.5, "brDyn": 0.6, "keyClick": 0, "chiff": 0, "tongue": 1,
+      "bodyMix": 0.7, "bodyShift": 0, "bodyReso": 0.5
+    } },
+    "brass": { "base": "acoustic", "params": {
+      "osc3On": 1, "osc3Shape": 2.7, "osc3PW": 0.35, "osc3Fine": 4, "osc3Level": 0.12, "osc3Cut": 2.5, "osc3Res": 0.1,
+      "osc3AmpAtk": 0.05, "osc3AmpAtkCrv": 0.4, "osc3AmpDec": 0.3, "osc3AmpSus": 0.8, "osc3AmpRel": 0.1,
+      "osc3PEnvAmt": -25, "osc3PEnvTime": 0.05, "osc3PEnvCrv": 0.6, "osc3PEnvVel": 0.5,
+      "osc3TEnvAtk": 0.04, "osc3TEnvDec": 0.3, "osc3TEnvSus": 0.3, "osc3TEnvCut": 2, "osc3TEnvVel": 0.6
+    } },
+    "reed": { "base": "acoustic", "params": {
+      "osc1Shape": 2.4, "osc1PW": 0.42, "osc1Cut": 3, "osc1Res": 0.25, "osc1Level": 0.3,
+      "osc1AmpAtk": 0.025, "osc1PEnvAmt": -15, "osc1BlipAmt": 0, "osc1TEnvCut": 1, "osc1TEnvSus": 0.5,
+      "osc2Shape": 3, "osc2PW": 0.2, "osc2Level": 0.15, "osc2Cut": 5, "osc2PEnvAmt": -15,
+      "addSpecDly": 0.25, "addDynSpread": 0.7, "addHiAtk": 0.035, "addHiSus": 0.8, "addHiLvl": 0.9,
+      "dynBright": 2.5, "dynBrCurve": 0.3, "dynRange": 24,
+      "brsAmt": 0.25, "brsType": 1, "dynBrass": 0.5,
+      "lipAmt": 0.25, "lipTone": 0.6, "lipDecay": 0.02, "lipPitch": 0.4,
+      "brNoise": 0.12, "brTone": 0.55, "brDyn": 0.5, "keyClick": 0.25, "chiff": 0.35,
+      "vibDepth": 18, "vibRate": 5.2, "vibDelay": 0.25, "vibFade": 0.5, "slurDip": 0.15, "glideTime": 0.035
+    } }
+  },
+  "categories": [
+    { "name": "Trumpet", "presets": [
+      { "name": "Lead Trumpet", "base": "brass", "params": { "instrument": 0, "osc1Cut": 3, "dynBright": 3.5, "osc1BlipAmt": 14,
+        "brsAmt": 0.2, "dynBrass": 0.8, "tongue": 2, "ampLevel": -3.1 } },
+      { "name": "Harmon Trumpet", "base": "brass", "params": { "instrument": 0, "muteType": 3, "muteMix": 1, "vibDepth": 8, "vibDelay": 0.5,
+        "dynBrass": 0.4, "tongue": 0, "brNoise": 0.1, "ampLevel": 5 } }
+    ] },
+    { "name": "Flugelhorn", "presets": [
+      { "name": "Mellow Flugel", "base": "brass", "params": { "instrument": 1, "osc1Shape": 1.6, "osc1Cut": 2, "osc3Level": 0.06, "dynBright": 2,
+        "osc1AmpAtk": 0.06, "osc2AmpAtk": 0.07, "addLoAtk": 0.04, "addMidAtk": 0.06, "addHiAtk": 0.09, "osc1BlipAmt": 4,
+        "brsAmt": 0.05, "dynBrass": 0.3, "lipAmt": 0.2, "tongue": 0, "brNoise": 0.08, "vibDepth": 10, "ampLevel": -3.8 } }
+    ] },
+    { "name": "Trombone", "presets": [
+      { "name": "Tenor Trombone", "base": "brass", "params": { "instrument": 2, "osc1Cut": 2.5, "dynBright": 3.5, "glideTime": 0.09, "slurDip": 0.15,
+        "osc1PEnvAmt": -40, "osc2PEnvAmt": -40, "osc3PEnvAmt": -40, "osc1AmpRel": 0.15, "dynBrass": 0.9, "vibDepth": 8, "vibWheel": 0.8, "ampLevel": -3.8 } },
+      { "name": "Plunger Bone", "base": "brass", "params": { "instrument": 2, "muteType": 4, "muteSrc": 1, "muteMix": 1, "vibWheel": 0, "vibDepth": 6,
+        "growlAmt": 0.25, "growlRate": 32, "glideTime": 0.09, "osc1PEnvAmt": -40, "dynBrass": 0.8, "ampLevel": 4.3 } }
+    ] },
+    { "name": "French Horn", "presets": [
+      { "name": "Concert Horn", "base": "brass", "params": { "instrument": 3, "osc1Shape": 1.7, "osc1Cut": 1.8, "osc3Level": 0.05, "dynBright": 2.5,
+        "osc1AmpAtk": 0.07, "osc2AmpAtk": 0.08, "addLoAtk": 0.05, "addMidAtk": 0.07, "addHiAtk": 0.1, "osc1AmpRel": 0.25, "osc2AmpRel": 0.3,
+        "addLoRel": 0.25, "addMidRel": 0.2, "vibDepth": 4, "vibAmp": 0, "osc1BlipAmt": 6, "brsAmt": 0.05, "dynBrass": 0.7, "tongue": 0, "ampLevel": -4.9 } }
+    ] },
+    { "name": "Tuba/Low Brass", "presets": [
+      { "name": "Concert Tuba", "base": "brass", "params": { "instrument": 4, "osc1Shape": 1.8, "osc1Cut": 2, "osc2Level": 0.3, "dynBright": 2.5,
+        "osc1AmpAtk": 0.06, "osc2AmpAtk": 0.06, "addLoAtk": 0.045, "addMidAtk": 0.06, "addHiAtk": 0.08, "osc1AmpRel": 0.18,
+        "lipTone": 0.3, "vibDepth": 6, "ampLevel": -4.7 } }
+    ] },
+    { "name": "Soprano Sax", "presets": [
+      { "name": "Soprano Sax", "base": "reed", "params": { "instrument": 5, "osc1Cut": 3.5, "vibDepth": 20, "ampLevel": -3.2 } }
+    ] },
+    { "name": "Alto Sax", "presets": [
+      { "name": "Alto Sax", "base": "reed", "params": { "instrument": 6, "osc1Cut": 3, "ampLevel": -3.1 } }
+    ] },
+    { "name": "Tenor Sax", "presets": [
+      { "name": "Tenor Sax", "base": "reed", "params": { "instrument": 7, "osc1Cut": 2.8, "osc1Shape": 2.5, "vibDepth": 16, "ampLevel": -3.2 } },
+      { "name": "Growl Tenor", "base": "reed", "params": { "instrument": 7, "osc1Cut": 3, "osc1Shape": 2.5, "growlAmt": 0.55, "growlRate": 26, "growlRough": 0.6,
+        "growlDyn": 0.7, "brsAmt": 0.4, "dynBrass": 0.8, "brNoise": 0.18, "vibDepth": 14, "ampLevel": -2.3 } }
+    ] },
+    { "name": "Baritone Sax", "presets": [
+      { "name": "Bari Sax", "base": "reed", "params": { "instrument": 8, "osc1Cut": 2.5, "osc1Shape": 2.6, "osc2Level": 0.2, "vibDepth": 12, "ampLevel": -3.7 } }
+    ] },
+    { "name": "Sections", "presets": [
+      { "name": "Brass Pad", "base": "brass", "params": { "instrument": 0, "voiceMode": 0, "glideOn": 0,
+        "osc1Fine": -6, "osc3Shape": 2, "osc3Fine": 6, "osc3Level": 0.3, "osc3Cut": 3,
+        "osc1AmpAtk": 0.12, "osc2AmpAtk": 0.12, "osc3AmpAtk": 0.14, "osc1AmpRel": 0.4, "osc2AmpRel": 0.4, "osc3AmpRel": 0.4,
+        "addLoAtk": 0.1, "addMidAtk": 0.13, "addHiAtk": 0.16, "addLoRel": 0.4, "addMidRel": 0.35, "addHiRel": 0.3,
+        "osc1AmpSus": 0.9, "osc3AmpSus": 0.9, "dynAttack": 0.8, "vibDepth": 6, "vibDelay": 0.5, "lipAmt": 0.15, "ampLevel": -9.6 } }
+    ] },
+    { "name": "Synth Brass", "presets": [
+      { "name": "80s Stab", "params": { "instrument": 9, "voiceMode": 0, "bodyMix": 0, "brsAmt": 0, "dynBrass": 0, "lipAmt": 0, "brNoise": 0,
+        "osc1On": 1, "osc1Shape": 2, "osc1Fine": -8, "osc1Level": 0.7, "osc1Cut": 64,
+        "osc1AmpAtk": 0.01, "osc1AmpSus": 1, "osc1AmpRel": 0.25,
+        "osc2On": 1, "osc2Shape": 2, "osc2Fine": 8, "osc2Level": 0.7, "osc2Cut": 64,
+        "osc2AmpAtk": 0.01, "osc2AmpSus": 1, "osc2AmpRel": 0.25,
+        "osc3On": 1, "osc3Shape": 3, "osc3PW": 0.5, "osc3Pitch": -12, "osc3Level": 0.3, "osc3Cut": 64,
+        "osc3AmpAtk": 0.01, "osc3AmpSus": 1, "osc3AmpRel": 0.25,
+        "fltOn": 1, "fltType": 1, "fltCutoff": 500, "fltReso": 0.2, "fltKey": 0.5, "fltEnvAmt": 4,
+        "fltAtk": 0.02, "fltDec": 0.45, "fltSus": 0.35, "fltRel": 0.3, "fltVel": 0.7,
+        "dynBright": 0, "dynRange": 14, "dynAttack": 0.2, "vibDepth": 0, "vibAmp": 0, "ampLevel": -9.4 } }
+    ] },
+    { "name": "Hybrid/FX", "presets": [
+      { "name": "Swell Horn", "base": "brass", "params": { "instrument": 3, "voiceMode": 0, "glideOn": 0,
+        "osc1AmpAtk": 1.2, "osc1AmpAtkCrv": -0.3, "osc2AmpAtk": 1.4, "osc3AmpAtk": 1.6, "osc1AmpRel": 0.8, "osc2AmpRel": 0.8, "osc3AmpRel": 0.8,
+        "osc1TEnvAtk": 1.5, "osc1TEnvSus": 0.8, "osc1TEnvCut": 3, "osc1TEnvVel": 0, "osc3TEnvAtk": 1.8, "osc3TEnvSus": 0.8,
+        "addLoAtk": 1.0, "addMidAtk": 1.3, "addHiAtk": 1.8, "addSpecDly": 1, "addLoRel": 0.8, "addMidRel": 0.7, "addHiRel": 0.6,
+        "dynAttack": 0, "lipAmt": 0, "vibDepth": 8, "vibDelay": 0.8, "vibFade": 1.5, "ampLevel": -11 } }
+    ] }
+  ]
+}

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brass Knuckles</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="plugin">
+  <!-- shared SVG defs (knob face: gunmetal with a brass rim highlight) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <radialGradient id="knobFace" cx="38%" cy="30%" r="80%">
+        <stop offset="0%" stop-color="#4a4f57"/>
+        <stop offset="55%" stop-color="#25292e"/>
+        <stop offset="100%" stop-color="#15171a"/>
+      </radialGradient>
+    </defs>
+  </svg>
+
+  <main class="synth">
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-logo" viewBox="0 0 34 34" aria-hidden="true">
+          <circle class="bl-ring" cx="17" cy="17" r="14.5"/>
+          <path class="bl-bell" d="M7 21 Q15 19 19 13 L27 9 L27 25 L19 21 Q15 22 7 21 Z"/>
+        </svg>
+        <div class="brand-text">
+          <span class="brand-mark">BRASS KNUCKLES</span>
+          <span class="brand-sub" id="brand-sub">BRASS &amp; REEDS · ENVELOPE OSCILLATORS</span>
+        </div>
+      </div>
+      <div class="patch-display">
+        <button id="preset-prev" type="button" class="pd-step" aria-label="Previous preset">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M8 2 4 6l4 4"/></svg>
+        </button>
+        <div class="pd-text">
+          <span id="preset-cat" class="pd-label">PRESET</span>
+          <span id="preset-name" class="pd-name"></span>
+        </div>
+        <button id="preset-next" type="button" class="pd-step" aria-label="Next preset">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2 4 4-4 4"/></svg>
+        </button>
+      </div>
+      <div class="preset-actions">
+        <button id="preset-save" type="button" class="pd-btn">SAVE</button>
+        <button id="preset-load" type="button" class="pd-btn">LOAD</button>
+        <button id="preset-folder" type="button" class="pd-btn" title="Open the preset folder">FOLDER</button>
+      </div>
+      <div class="top-controls">
+        <label class="midi-pick web-only">
+          <span class="ctl-label">MIDI IN</span>
+          <select id="midi-select"><option>Detecting…</option></select>
+        </label>
+        <span class="indicator"><span class="led" id="midi-led" title="Note activity"></span>MIDI</span>
+        <span class="indicator"><span class="led" id="sustain-led"></span>SUS</span>
+        <span class="indicator absent" id="breath-ind" title="Breath controller (lights up once one is detected)">
+          BREATH <span class="mini-meter"><div id="breath-mini"></div></span>
+        </span>
+        <label class="indicator bpm-ctl web-only" title="Tempo for synced LFOs (from the host in the plugin)">
+          BPM <input id="bpm-input" type="number" min="20" max="300" step="0.1" value="120">
+        </label>
+        <button id="panic-btn" type="button" class="panic">PANIC</button>
+      </div>
+    </header>
+
+    <section class="browser" aria-label="Presets">
+      <div class="cat-tabs" id="cat-tabs" role="tablist"></div>
+      <div class="preset-grid" id="preset-grid"></div>
+    </section>
+
+    <nav class="page-tabs" role="tablist" aria-label="Sections">
+      <button type="button" class="page-tab" data-page="play" role="tab">PLAY</button>
+      <button type="button" class="page-tab" data-page="osc" role="tab">OSCILLATORS</button>
+      <button type="button" class="page-tab" data-page="harm" role="tab"><span class="led" id="harm-led"></span>HARMONICS</button>
+      <button type="button" class="page-tab" data-page="tone" role="tab"><span class="led" id="tone-led"></span>TONE · MUTES</button>
+      <button type="button" class="page-tab" data-page="attack" role="tab"><span class="led" id="attack-led"></span>ATTACK · BREATH</button>
+      <span class="page-hint" id="page-hint"></span>
+    </nav>
+    <div class="pages">
+      <div class="page" data-page="play">
+        <section class="row play-row-1" id="play-row-1"></section>
+        <section class="row play-row-2" id="play-row-2"></section>
+      </div>
+      <div class="page" data-page="osc">
+        <section class="row osc-row" id="osc-row"></section>
+        <section class="row filter-row" id="filter-row"></section>
+      </div>
+      <div class="page" data-page="harm">
+        <section class="row harm-row-1" id="harm-row-1"></section>
+        <section class="row harm-row-2" id="harm-row-2"></section>
+      </div>
+      <div class="page" data-page="tone">
+        <section class="row tone-row" id="tone-row"></section>
+      </div>
+      <div class="page" data-page="attack">
+        <section class="row attack-row-1" id="attack-row-1"></section>
+        <section class="row attack-row-2" id="attack-row-2"></section>
+      </div>
+    </div>
+
+    <section class="keybed">
+      <div id="wheel-slot"></div>
+      <div id="breath-slot"></div>
+      <div class="octave-ctl">
+        <span class="ctl-label">OCTAVE</span>
+        <div class="oct-buttons">
+          <button id="oct-down" type="button" aria-label="Octave down">−</button>
+          <button id="oct-up" type="button" aria-label="Octave up">+</button>
+        </div>
+        <span id="octave-readout" class="oct-readout"></span>
+        <button id="range-toggle" type="button" class="power range-toggle" title="Dim the keys outside the instrument's real range">
+          <span class="led"></span><span>RANGE</span>
+        </button>
+        <span class="kbd-hint">Keys: A–' play<br>Z / X octave</span>
+      </div>
+      <div id="piano" class="piano"></div>
+    </section>
+
+    <footer class="statusbar">
+      <span id="midi-monitor" class="monitor">Connecting to plugin…</span>
+      <span class="audio-status"><span class="led" id="audio-led"></span><span id="audio-info">—</span></span>
+    </footer>
+  </main>
+
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-card">
+      <div id="modal-title" class="modal-title"></div>
+      <div id="modal-body" class="modal-body"></div>
+      <input id="modal-input" type="text" maxlength="60" spellcheck="false" autocomplete="off">
+      <div class="modal-actions">
+        <button id="modal-cancel" type="button" class="pd-btn">CANCEL</button>
+        <button id="modal-ok" type="button" class="pd-btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/params.js"></script>
+  <script src="js/instruments.js"></script>
+  <script src="js/engine-juce.js"></script>
+  <script src="js/knob.js"></script>
+  <script src="js/controls.js"></script>
+  <script src="js/envelope.js"></script>
+  <script src="js/piano.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

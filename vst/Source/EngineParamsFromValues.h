@@ -128,6 +128,82 @@ EngineParams makeEngineParams (GetValue&& get)
     p.flutAmt    = num (flutAmt);
     p.flutRate   = num (flutRate);
 
+    p.artKs     = on (artKs);
+    p.artKsBase = inum (artKsBase);
+    p.fallRng   = num (artFallRng);
+    p.fallTime  = num (artFallTime);
+    p.doitRng   = num (artDoitRng);
+    p.doitTime  = num (artDoitTime);
+    p.ripRng    = num (artRipRng);
+    p.ripTime   = num (artRipTime);
+    p.shakeRate = num (artShakeRate);
+    p.shakeRng  = num (artShakeRng);
+    p.scoopRng  = num (artScoopRng);
+    p.scoopTime = num (artScoopTime);
+    p.artAuto   = on (artAuto);
+    p.autoGap   = num (artAutoGap);
+    p.autoLo    = inum (artAutoLo);
+    p.autoHi    = inum (artAutoHi);
+
+    p.secPlayers   = inum (secPlayers);
+    p.secDetune    = num (secDetune);
+    p.secTiming    = num (secTiming);
+    p.secVibDesync = num (secVibDesync);
+    p.secTimbre    = num (secTimbre);
+    p.secWidth     = num (secWidth);
+    p.anaUnison    = inum (anaUnison);
+    p.anaDetune    = num (anaDetune);
+    p.anaSpread    = num (anaSpread);
+    p.anaBlat      = num (anaBlat);
+
+    for (int i = 0; i < kNumLfo; ++i)
+    {
+        auto& l = p.lfo[(size_t) i];
+        l.on       = on (lfoParam (i, 0));
+        l.wave     = choice (lfoParam (i, 1), 5);
+        l.rate     = num (lfoParam (i, 2));
+        l.sync     = on (lfoParam (i, 3));
+        l.div      = choice (lfoParam (i, 4), kNumLfoDivs - 1);
+        l.perVoice = choice (lfoParam (i, 5), 1) == 1;
+        l.retrig   = choice (lfoParam (i, 6), 1) == 1;
+        l.phase    = num (lfoParam (i, 7)) / 360.0;
+        l.amount   = num (lfoParam (i, 8));
+    }
+    for (int s = 0; s < kNumModSlots; ++s)
+    {
+        auto& m = p.mod[(size_t) s];
+        m.on     = on (modParam (s, 0));
+        m.src    = choice (modParam (s, 1), kNumModSources - 1);
+        m.via    = choice (modParam (s, 2), kNumModSources - 1);
+        m.dst    = choice (modParam (s, 3), kNumModDests - 1);
+        m.amount = num (modParam (s, 4));
+    }
+
+    p.fxDrvOn   = on (fxDrvOn);
+    p.fxDrvType = choice (fxDrvType, 1);
+    p.fxDrvAmt  = num (fxDrvAmt);
+    p.fxDrvTone = num (fxDrvTone);
+    p.fxDrvMix  = num (fxDrvMix);
+    p.eqOn      = on (eqOn);
+    p.eqLoGain  = num (eqLoGain);
+    p.eqLoFreq  = num (eqLoFreq);
+    p.eqMidGain = num (eqMidGain);
+    p.eqMidFreq = num (eqMidFreq);
+    p.eqMidQ    = num (eqMidQ);
+    p.eqHiGain  = num (eqHiGain);
+    p.eqHiFreq  = num (eqHiFreq);
+    p.chOn      = on (chOn);
+    p.chRate    = num (chRate);
+    p.chDepth   = num (chDepth);
+    p.chMix     = num (chMix);
+    p.rvOn      = on (rvOn);
+    p.rvType    = choice (rvType, 1);
+    p.rvDecay   = num (rvDecay);
+    p.rvPre     = num (rvPre);
+    p.rvDamp    = num (rvDamp);
+    p.rvMix     = num (rvMix);
+    p.stWidth   = num (stWidth);
+
     p.vibDepth = num (vibDepth);
     p.vibAmp   = num (vibAmp);
     p.vibRate  = num (vibRate);

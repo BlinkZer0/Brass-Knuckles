@@ -69,6 +69,8 @@ struct Biquad
         const double y = c.b0 * x + z1;
         z1 = c.b1 * x - c.a1 * y + z2;
         z2 = c.b2 * x - c.a2 * y;
+        if (z1 < 1e-30 && z1 > -1e-30) z1 = 0;   // anti-denormal: decaying states end at exactly 0
+        if (z2 < 1e-30 && z2 > -1e-30) z2 = 0;
         return y;
     }
 };

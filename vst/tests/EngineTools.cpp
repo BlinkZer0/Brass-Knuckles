@@ -71,6 +71,19 @@ std::vector<Event> phrase (const juce::String& name, const Values& v, double& le
         off (4.4, n);
         length = 5.2;
     }
+    else if (name == "articulations")   // each keyswitch once: normal, fall, doit, rip, shake, scoop
+    {
+        const int ks = (int) std::lround (v[artKsBase]);
+        const int order[] { 0, 1, 2, 3, 4, 5 };
+        double t = 0.1;
+        for (const int a : order)
+        {
+            on (t - 0.05, ks + a, 100); off (t - 0.04, ks + a);
+            on (t, n, 105); off (t + (a == 4 ? 1.2 : 0.6), n);
+            t += a == 4 ? 1.9 : 1.3;
+        }
+        length = t + 0.3;
+    }
     else if (name == "legato")     // overlapping line: glide + lip slurs in Legato mode
     {
         const int line[] { 0, 2, 4, 5, 7, 5, 4, 2, 0 };
@@ -143,7 +156,8 @@ int runRenderAll (const juce::File& folder)
         for (const char* ph : { "demo", "velocity", "breath" })
         {
             double len = 0;
-            const auto a = render (v, phrase (ph, v, len), len);
+            const auto ev = phrase (ph, v, len);   // sets len: must run before render's arguments are read
+            const auto a = render (v, ev, len);
             const auto name = juce::String (i).paddedLeft ('0', 3) + " " + juce::File::createLegalFileName (p.category + " - " + p.name)
                               + " [" + ph + "].wav";
             writeWav (folder.getChildFile (name), a);
@@ -155,8 +169,161 @@ int runRenderAll (const juce::File& folder)
 }
 
 // Loudest 100 ms window (RMS) of the preset's chord (poly) or note (mono) at velocity 100,
-// with master low enough that the soft clipper stays linear. Reported with and without
-// the preset's own level.
+// with master low enough that the soft clipper stays linear, scaled back to master = 1.
+double presetLoudness (const PresetData& p)
+{
+    auto v = presetValues (p, 0.05f);
+    const int n = auditionNote (v);
+    std::vector<Event> ev { { sec (0.05), Event::On, n, 100.0 } };
+    if (! isMonoPreset (v)) { ev.push_back ({ sec (0.05), Event::On, n + 4, 100.0 }); ev.push_back ({ sec (0.05), Event::On, n + 7, 100.0 }); }
+    const auto a = render (v, ev, 2.5);
+    double best = 0;
+    for (int w = 0; w + sec (0.1) <= a.size(); w += sec (0.05)) best = std::max (best, rms (a, w, w + sec (0.1)));
+    return best / 0.05;
+}
+
+// Clicks: energy above 16 kHz (4th-order Butterworth high-pass) of the mono mix in 2 ms windows.
+// The tones have almost nothing up there (their brightness filters and harmonic layer stop well
+// below), while a click is broadband, so periodic waveform corners of low notes don't register
+// the way they do in a plain high-order difference. Returns max / median window RMS over
+// [from, to), with a floor of -100 dBFS for the median.
+static double lastClickTime = 0;   // where the loudest window was (diagnostics)
+// `around`: if not empty, only windows within 40 ms of these times (s) are judged.
+// `winSec`: window length; at least two periods of the lowest note, because a waveform's sharp
+// edge puts a burst of high-band energy into every period.
+double clickRatio (const Audio& a, int from, int to, const std::vector<double>& around = {}, double winSec = 0.002)
+{
+    const auto c1 = designBiquad (bqHighPass, 16000.0, 0.5412, 0, kSr);
+    const auto c2 = designBiquad (bqHighPass, 16000.0, 1.3066, 0, kSr);
+    Biquad h1, h2;
+    std::vector<double> hp ((size_t) a.size());
+    for (int i = 0; i < a.size(); ++i)
+        hp[(size_t) i] = h2.process (h1.process (0.5 * ((double) a.L[(size_t) i] + a.R[(size_t) i]), c1), c2);
+    std::vector<double> w;
+    const int win = sec (winSec);
+    for (int s = from; s + win <= std::min (to, a.size()); s += win)
+    {
+        double e = 0;
+        for (int i = s; i < s + win; ++i) e += hp[(size_t) i] * hp[(size_t) i];
+        w.push_back (std::sqrt (e / win));
+    }
+    // A click sticks out above BOTH sides; a level change (a brighter note, a glide) only above one.
+    // Each window is compared with the larger of the medians of the 10 windows (20 ms) before it
+    // and the 10 after it (skipping its direct neighbours).
+    const int ctx = 10;
+    double best = 0;
+    for (int i = ctx + 1; i + ctx + 1 < (int) w.size(); ++i)
+    {
+        if (! around.empty())
+        {
+            const double t = (from + (double) i * win) / kSr;
+            bool near = false;
+            for (const double c : around) near = near || std::abs (t - c) < std::max (0.04, 2 * winSec);
+            if (! near) continue;
+        }
+        auto medianOf = [&w] (int a0, int a1)
+        {
+            std::vector<double> s (w.begin() + a0, w.begin() + a1);
+            std::nth_element (s.begin(), s.begin() + (long) s.size() / 2, s.end());
+            return s[s.size() / 2];
+        };
+        const double ref = std::max (std::max (medianOf (i - ctx - 1, i - 1), medianOf (i + 2, i + ctx + 2)), 1e-5);
+        const double r = w[(size_t) i] / ref;
+        if (r > best) { best = r; lastClickTime = (from + (double) i * win) / kSr; }
+    }
+    return best;
+}
+
+// Legato glides must not click. Every preset that plays legato (mono, glide) renders the legato
+// phrase with its deliberate transients (lip buzz, key click, chiff, breath noise, growl,
+// flutter) and reverb off; the click ratio must stay under the threshold. The detector is
+// checked first: the same clean render with a tiny injected step (-46 dBFS) must trip it.
+constexpr double kClickThreshold = 4.0;   // clean legato presets measure <= 1.3; a -46 dBFS step ~10
+// Diagnostics: high-band (>16 kHz) RMS in 2 ms windows between t0 and t1 for a preset's
+// legato phrase and for one held note.
+int runHfDump (const juce::String& spec, double t0, double t1)
+{
+    PresetManager pm;
+    const PresetData* p = nullptr;
+    for (const auto& x : pm.factory()) if (x.category + "/" + x.name == spec || x.name == spec) p = &x;
+    if (p == nullptr) return 2;
+    auto v = presetValues (*p);
+    for (const char* id : { "lipAmt", "keyClick", "chiff", "brNoise", "growlAmt", "flutAmt", "rvOn", "chOn", "vibDepth", "vibAmp" })
+        v[(size_t) paramIndex (id)] = 0;
+    double len = 0;
+    const auto ev = phrase ("legato", v, len);
+    for (int run = 0; run < 2; ++run)
+    {
+        const auto a = run == 0 ? render (v, ev, len) : render (v, { { sec (0.1), Event::On, auditionNote (v), 90.0 } }, len);
+        const auto c1 = designBiquad (bqHighPass, 16000.0, 0.5412, 0, kSr), c2 = designBiquad (bqHighPass, 16000.0, 1.3066, 0, kSr);
+        Biquad h1, h2;
+        std::printf ("%s:\n", run == 0 ? "legato phrase" : "one held note");
+        double acc = 0, full = 0; int cnt = 0;
+        for (int i = 0; i < sec (t1); ++i)
+        {
+            const double x = 0.5 * ((double) a.L[(size_t) i] + a.R[(size_t) i]);
+            const double h = h2.process (h1.process (x, c1), c2);
+            if (i < sec (t0)) continue;
+            acc += h * h; full += x * x;
+            if (++cnt == sec (0.002)) { std::printf ("  %.3f s  hf %.2e  full %.2e\n", (double) i / kSr, std::sqrt (acc / cnt), std::sqrt (full / cnt)); acc = full = 0; cnt = 0; }
+        }
+    }
+    return 0;
+}
+
+int runClickChecks (bool verbose)
+{
+    PresetManager pm;
+    int fails = 0, checked = 0;
+    double worst = 0;
+    juce::String worstName;
+    // the detector must see a small step (-46 dBFS) in a clean legato sine line
+    {
+        auto v = defaultValues();
+        v[voiceMode] = 2; v[glideOn] = 1; v[(size_t) oscParam (0, oShape)] = 0; v[(size_t) oscParam (0, oCut)] = 64;
+        for (const char* id : { "lipAmt", "brNoise", "brsAmt", "dynBrass", "bodyMix", "vibDepth" }) v[(size_t) paramIndex (id)] = 0;
+        double len = 0;
+        const auto ev = phrase ("legato", v, len);
+        auto a = render (v, ev, len);
+        std::vector<double> changes;
+        for (int i = 1; i < 9; ++i) changes.push_back (0.1 + i * 0.35);
+        const double winSec = std::max (0.002, 2.0 / noteHz (auditionNote (v)));
+        const double clean = clickRatio (a, sec (0.2), sec (len - 0.6), changes, winSec);
+        // a step right at a note change (1.15 s): the kind of click a bad glide would make
+        for (int i = sec (1.15); i < a.size(); ++i) { a.L[(size_t) i] += 0.005f; a.R[(size_t) i] += 0.005f; }
+        const double withStep = clickRatio (a, sec (0.2), sec (len - 0.6), changes, winSec);
+        const bool ok = clean < kClickThreshold && withStep > kClickThreshold * 2;
+        std::printf ("%-4s click detector on a sine line: clean %.1f, with a -46 dBFS step %.1f (must exceed %.0f)\n",
+                     ok ? "ok" : "FAIL", clean, withStep, kClickThreshold * 2);
+        if (! ok) ++fails;
+    }
+    for (const auto& p : pm.factory())
+    {
+        auto v = presetValues (p);
+        if (v[voiceMode] < 1.5f || v[glideOn] < 0.5f) continue;   // legato presets with glide
+        for (const char* id : { "lipAmt", "keyClick", "chiff", "brNoise", "growlAmt", "flutAmt", "rvOn", "chOn", "vibDepth", "vibAmp" })
+            v[(size_t) paramIndex (id)] = 0;
+        v[oversample] = 2;   // 4x: aliasing above 16 kHz is the aliasing check's business, not this one's
+        double len = 0;
+        const auto ev = phrase ("legato", v, len);
+        const auto a = render (v, ev, len);
+        // judged around each legato note change (the phrase changes note every 0.35 s from 0.45 s)
+        std::vector<double> changes;
+        for (int i = 1; i < 9; ++i) changes.push_back (0.1 + i * 0.35);
+        const double winSec = std::max (0.002, 2.0 / noteHz (auditionNote (v) + (int) std::lround (v[transpose])));
+        const double r = clickRatio (a, sec (0.2), sec (len - 0.6), changes, winSec);
+        ++checked;
+        if (r > worst) { worst = r; worstName = p.category + "/" + p.name; }
+        const bool ok = r < kClickThreshold;
+        if (! ok) ++fails;
+        if (verbose || ! ok) std::printf ("%-4s legato clicks %-34s ratio %.1f at %.3f s\n", ok ? "ok" : "FAIL",
+                                          (p.category + "/" + p.name).toRawUTF8(), r, lastClickTime);
+    }
+    std::printf ("%-4s legato glides: %d presets, worst click ratio %.1f (%s), threshold %.0f\n", fails == 0 ? "ok" : "FAIL",
+                 checked, worst, worstName.toRawUTF8(), kClickThreshold);
+    return fails;
+}
+
 int runLoudness()
 {
     PresetManager pm;
@@ -165,13 +332,7 @@ int runLoudness()
     for (size_t pi = 0; pi < f.size(); ++pi)
     {
         auto v = presetValues (f[pi], 0.05f);
-        const int n = auditionNote (v);
-        std::vector<Event> ev { { sec (0.05), Event::On, n, 100.0 } };
-        if (! isMonoPreset (v)) { ev.push_back ({ sec (0.05), Event::On, n + 4, 100.0 }); ev.push_back ({ sec (0.05), Event::On, n + 7, 100.0 }); }
-        const auto a = render (v, ev, 2.5);
-        double best = 0;
-        for (int w = 0; w + sec (0.1) <= a.size(); w += sec (0.05)) best = std::max (best, rms (a, w, w + sec (0.1)));
-        const double loud = best / 0.05;
+        const double loud = presetLoudness (f[pi]);
         const double withoutAmp = loud / std::pow (10.0, v[ampLevel] / 20.0);
         std::printf ("  { \"index\": %d, \"name\": \"%s\", \"category\": \"%s\", \"loudness\": %.6f, \"loudnessDb\": %.2f, \"loudnessNoAmp\": %.6f, \"ampLevel\": %.2f }%s\n",
                      (int) pi, f[pi].name.toRawUTF8(), f[pi].category.toRawUTF8(), loud, 20 * std::log10 (std::max (loud, 1e-9)),
@@ -197,9 +358,27 @@ int runBench()
     set ("addOn", 1); set ("addPartials", 32); set ("brsAmt", 0.5f); set ("dynBrass", 0.8f);
     set ("lipAmt", 0.5f); set ("lipDecay", 0.3f); set ("brNoise", 0.3f); set ("keyClick", 0.5f);
     set ("growlAmt", 0.5f); set ("flutAmt", 0.3f); set ("bodyMix", 1); set ("muteType", 4);
-    for (int os = 0; os <= 2; ++os)
+    // phase 4: every FX, both LFOs (one per voice, one global), all 12 matrix routes
+    set ("fxDrvOn", 1); set ("eqOn", 1); set ("eqMidGain", 3); set ("chOn", 1); set ("rvOn", 1);
+    set ("lfo1On", 1); set ("lfo1Mode", 1); set ("lfo2On", 1); set ("lfo2Wave", 5);
     {
+        const int routes[12][2] { { srcLfo1, dstPitchAll }, { srcLfo2, dstFltCutoff }, { srcAmpEnv1, dstOsc2Shape }, { srcDynamics, dstHarmTilt },
+                                  { srcBreath, dstBrassiness }, { srcModWheel, dstVibDepth }, { srcRandom, dstPan }, { srcKey, dstOsc1Bright },
+                                  { srcVibrato, dstAmp }, { srcTmbEnv1, dstOsc3PW }, { srcLfo2, dstPlunger }, { srcModWheel, dstReverbMix } };
+        for (int s = 0; s < 12; ++s)
+        {
+            v[(size_t) modParam (s, 1)] = (float) routes[s][0];
+            v[(size_t) modParam (s, 3)] = (float) routes[s][1];
+            v[(size_t) modParam (s, 4)] = 0.1f;
+        }
+    }
+    for (int run = 0; run < 5; ++run)
+    {
+        // runs 0-2: one player per note at 1x / 2x / 4x; runs 3-4: 8-player sections at 4x (32 and 16 notes)
+        const int os = std::min (run, 2);
         set ("oversample", (float) os);
+        set ("secPlayers", run >= 3 ? 8.0f : 1.0f);
+        const int notes = run == 4 ? 16 : 32;
         auto enginePtr = std::make_unique<SynthEngine>(); // ~1.6 MB: too big for the stack
         auto& engine = *enginePtr;
         engine.prepare (kSr);
@@ -207,7 +386,7 @@ int runBench()
         const auto P = makeEngineParams ([&v] (int i) { return v[(size_t) i]; });
         engine.setParams (P);
         engine.setController (2, 0.5);
-        for (int n = 0; n < 32; ++n) engine.noteOn (36 + n, 100);
+        for (int n = 0; n < notes; ++n) engine.noteOn (36 + n, 100);
         const int blocks = (int) (kSr * 10 / 512);
         const auto t0 = juce::Time::getMillisecondCounterHiRes();
         for (int b = 0; b < blocks; ++b)
@@ -218,8 +397,63 @@ int runBench()
             engine.render (L.data(), R.data(), 512);
         }
         const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
-        std::printf ("32 notes, every voice feature, %dx oversampling: %6.0f ms for 10 s of audio  (%.1f%% of one core, %d notes)\n",
-                     os == 0 ? 1 : (os == 1 ? 2 : 4), ms, ms / 100.0, engine.activeVoices());
+        std::printf ("%2d notes x %d player%s, every voice feature, %dx oversampling: %6.0f ms for 10 s of audio  (%.1f%% of one core, %d notes)\n",
+                     notes, run >= 3 ? 8 : 1, run >= 3 ? "s" : " ", os == 0 ? 1 : (os == 1 ? 2 : 4), ms, ms / 100.0, engine.activeVoices());
+    }
+
+    // the real thing: every factory preset with section players or unison, a 12-note chord held for 5 s
+    PresetManager pm;
+    std::printf ("factory presets with several players per note, 12-note chord:\n");
+    for (const auto& p : pm.factory())
+    {
+        const auto pv = presetValues (p);
+        const bool multi = pv[secPlayers] > 1.5f || (pv[engineMode] > 0.5f && pv[anaUnison] > 1.5f);
+        if (! multi) continue;
+        auto e = std::make_unique<SynthEngine>();
+        e->prepare (kSr);
+        const auto P = makeEngineParams ([&pv] (int i) { return pv[(size_t) i]; });
+        e->setParams (P);
+        for (int n = 0; n < 12; ++n) e->noteOn (48 + n * 2, 100);
+        std::array<float, 512> L {}, R {};
+        const int blocks = (int) (kSr * 5 / 512);
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        for (int b = 0; b < blocks; ++b) { e->setParams (P); e->setTransport (120.0, 0.0, false); e->render (L.data(), R.data(), 512); }
+        std::printf ("   %-30s %5.1f%% of one core\n", (p.category + "/" + p.name).toRawUTF8(), (juce::Time::getMillisecondCounterHiRes() - t0) / 50.0);
+    }
+    return 0;
+}
+
+// Profiling aid: the 32 x 8 section case at 2x with one feature switched off at a time.
+int runBenchParts()
+{
+    auto base = defaultValues();
+    auto set = [] (Values& v, const char* id, float x) { v[(size_t) paramIndex (id)] = x; };
+    for (auto [id, x] : std::initializer_list<std::pair<const char*, double>> {
+             { "osc2On", 1 }, { "osc3On", 1 }, { "osc2Shape", 2.5f }, { "osc3Shape", 1.5f }, { "fltOn", 1 }, { "fltType", 1 },
+             { "addOn", 1 }, { "addPartials", 32 }, { "brsAmt", 0.5f }, { "dynBrass", 0.8f }, { "lipAmt", 0.5f }, { "lipDecay", 0.3f },
+             { "brNoise", 0.3f }, { "keyClick", 0.5f }, { "growlAmt", 0.5f }, { "flutAmt", 0.3f }, { "bodyMix", 1 }, { "muteType", 4 },
+             { "osc1AmpRel", 5 }, { "osc2AmpRel", 5 }, { "osc3AmpRel", 5 }, { "secPlayers", 8 }, { "oversample", 1 } })
+        set (base, id, (float) x);
+    auto time = [] (const Values& v)
+    {
+        auto e = std::make_unique<SynthEngine>();
+        e->prepare (kSr);
+        const auto P = makeEngineParams ([&v] (int i) { return v[(size_t) i]; });
+        e->setParams (P);
+        for (int n = 0; n < 32; ++n) e->noteOn (36 + n, 100);
+        std::array<float, 512> L {}, R {};
+        const int blocks = (int) (kSr * 3 / 512);
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        for (int b = 0; b < blocks; ++b) { e->setParams (P); e->render (L.data(), R.data(), 512); }
+        return (juce::Time::getMillisecondCounterHiRes() - t0) / 30.0;   // % of one core
+    };
+    std::printf ("all on: %.1f%%\n", time (base));
+    for (const char* off : { "addOn", "brsAmt", "lipAmt", "brNoise", "keyClick", "growlAmt", "flutAmt", "fltOn", "osc2On", "osc3On" })
+    {
+        auto v = base;
+        set (v, off, 0);
+        if (juce::String (off) == "brsAmt") set (v, "dynBrass", 0);
+        std::printf ("without %-9s %.1f%%\n", off, time (v));
     }
     return 0;
 }
@@ -293,7 +527,11 @@ int runBrassChecks (bool verbose)
     int fails = 0;
     for (const auto& p : pm.factory())
     {
-        const auto v = presetValues (p);
+        // the preset's dynamic response, measured on its tone: one player (section detune moves the
+        // upper harmonics out of the measurement windows), no vibrato, no matrix routes
+        auto v = presetValues (p);
+        v[secPlayers] = 1; v[vibDepth] = 0; v[vibAmp] = 0; v[brNoise] = 0; v[growlAmt] = 0;
+        for (int s = 0; s < kNumModSlotsParam; ++s) v[(size_t) modParam (s, 0)] = 0;
         const bool acoustic = std::lround (v[instrument]) != 9;
         const int n = auditionNote (v);
         const double f0 = noteHz (n + (int) std::lround (v[transpose]));

@@ -92,6 +92,28 @@ inline double spectralEnvelopeDb (const InstrumentModel& m, double hz)
     return m.specDb[kSpecPoints - 1];
 }
 
+// Same as spectralEnvelopeDb, from the natural log of the frequency (lets the engine
+// compute log(f0) once per chunk and add log(n) per harmonic from a table).
+inline double spectralEnvelopeDbLog (int instrument, double logHz)
+{
+    struct LogTable { double v[kNumInstruments][kSpecPoints]; };
+    static const LogTable t = []
+    {
+        LogTable r {};
+        for (int i = 0; i < kNumInstruments; ++i)
+            for (int k = 0; k < kSpecPoints; ++k) r.v[i][k] = std::log (instrumentModel (i).specHz[k]);
+        return r;
+    }();
+    const int i = instrument < 0 ? 0 : (instrument >= kNumInstruments ? kNumInstruments - 1 : instrument);
+    const auto& m = instrumentModel (i);
+    const double* L = t.v[i];
+    if (logHz <= L[0]) return m.specDb[0];
+    for (int k = 1; k < kSpecPoints; ++k)
+        if (logHz <= L[k] || k == kSpecPoints - 1)
+            return m.specDb[k - 1] + (m.specDb[k] - m.specDb[k - 1]) * (logHz - L[k - 1]) / (L[k] - L[k - 1]);
+    return m.specDb[kSpecPoints - 1];
+}
+
 //==============================================================================
 // Mutes (bus): up to four bands plus, for the plunger, a moving low-pass.
 enum MuteType { muteOpen, muteStraight, muteCup, muteHarmon, mutePlungerType };

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(BrassKnucklesVST VERSION 0.1.0 LANGUAGES C CXX)
+project(BrassKnucklesVST VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -78,7 +78,7 @@ target_link_libraries(BrassKnucklesVST
 # Console tests + engine tools:  --target BrassKnucklesTests
 # ---------------------------------------------------------------------------
 juce_add_console_app(BrassKnucklesTests PRODUCT_NAME "BrassKnucklesTests")
-target_sources(BrassKnucklesTests PRIVATE tests/PresetTests.cpp tests/EngineTools.cpp tests/HostCheck.cpp Source/PresetManager.cpp)
+target_sources(BrassKnucklesTests PRIVATE tests/PresetTests.cpp tests/EngineTools.cpp tests/HostCheck.cpp tests/Parity.cpp Source/PresetManager.cpp)
 target_include_directories(BrassKnucklesTests PRIVATE Source)
 # JUCE_PLUGINHOST_VST3: --host-check loads the built .vst3 like a DAW would
 target_compile_definitions(BrassKnucklesTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0 JUCE_PLUGINHOST_VST3=1)

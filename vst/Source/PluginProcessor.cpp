@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "MidiRouting.h"
 
 using namespace bk;
 
@@ -37,15 +38,7 @@ EngineParams BrassKnucklesProcessor::readParams() const
 
 void BrassKnucklesProcessor::handleMidi (const juce::MidiMessage& m)
 {
-    const int ch = juce::jmax (0, m.getChannel() - 1);
-    if (m.isNoteOn())                  engine.noteOn (m.getNoteNumber(), m.getVelocity(), ch);
-    else if (m.isNoteOff())            engine.noteOff (m.getNoteNumber(), ch);
-    else if (m.isPitchWheel())         engine.setPitchBend ((m.getPitchWheelValue() - 8192) / 8192.0, ch);
-    else if (m.isChannelPressure())    engine.setChannelPressure (m.getChannelPressureValue() / 127.0, ch);
-    else if (m.isAftertouch())         engine.setPolyPressure (m.getNoteNumber(), m.getAfterTouchValue() / 127.0, ch);
-    else if (m.isAllSoundOff())        engine.panic();
-    else if (m.isAllNotesOff())        engine.allNotesOff();
-    else if (m.isController())         engine.setController (m.getControllerNumber(), m.getControllerValue() / 127.0, ch);
+    routeMidi (engine, m);   // MidiRouting.h (shared with the parity tool; mirrored in the web build)
 }
 
 void BrassKnucklesProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -63,6 +56,8 @@ void BrassKnucklesProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         engine.setController (juce::roundToInt (paramValue (dynBreathCC)), b, 0);
     else if (b < -1.5f)                                            // breath wheel double-clicked
         engine.forgetBreath();
+    if (const int a = uiArticulation.exchange (-1); a >= 0)        // articulation picked in the UI
+        engine.setArticulation (a);
 
     // Merges notes played on the UI keyboard into `midi`, and tracks all
     // sounding notes so the editor can light up the keys.
@@ -114,6 +109,7 @@ void BrassKnucklesProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     statAftertouch.store ((float) engine.aftertouchValue());
     statDynamics.store ((float) engine.lastDynamics());
     statPlunger.store ((float) engine.plungerPosition());
+    statArticulation.store (engine.articulation());
     const float pk = engine.takePeak();
     if (pk > statPeak.load()) statPeak.store (pk);
 }

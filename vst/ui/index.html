@@ -73,8 +73,11 @@
       <button type="button" class="page-tab" data-page="play" role="tab">PLAY</button>
       <button type="button" class="page-tab" data-page="osc" role="tab">OSCILLATORS</button>
       <button type="button" class="page-tab" data-page="harm" role="tab"><span class="led" id="harm-led"></span>HARMONICS</button>
-      <button type="button" class="page-tab" data-page="tone" role="tab"><span class="led" id="tone-led"></span>TONE · MUTES</button>
-      <button type="button" class="page-tab" data-page="attack" role="tab"><span class="led" id="attack-led"></span>ATTACK · BREATH</button>
+      <button type="button" class="page-tab" data-page="tone" role="tab"><span class="led" id="tone-led"></span>TONE · MUTE</button>
+      <button type="button" class="page-tab" data-page="attack" role="tab"><span class="led" id="attack-led"></span>BREATH</button>
+      <button type="button" class="page-tab" data-page="perform" role="tab"><span class="led" id="perform-led"></span>PERFORM</button>
+      <button type="button" class="page-tab" data-page="mod" role="tab"><span class="led" id="mod-led"></span>MOD</button>
+      <button type="button" class="page-tab" data-page="fx" role="tab"><span class="led" id="fx-led"></span>FX</button>
       <span class="page-hint" id="page-hint"></span>
     </nav>
     <div class="pages">
@@ -93,9 +96,20 @@
       <div class="page" data-page="tone">
         <section class="row tone-row" id="tone-row"></section>
       </div>
+      <div class="page" data-page="perform">
+        <section class="row perform-row-1" id="perform-row-1"></section>
+        <section class="row perform-row-2" id="perform-row-2"></section>
+      </div>
       <div class="page" data-page="attack">
         <section class="row attack-row-1" id="attack-row-1"></section>
         <section class="row attack-row-2" id="attack-row-2"></section>
+      </div>
+      <div class="page" data-page="mod">
+        <section class="row mod-row" id="mod-row"></section>
+      </div>
+      <div class="page" data-page="fx">
+        <section class="row fx-row-1" id="fx-row-1"></section>
+        <section class="row fx-row-2" id="fx-row-2"></section>
       </div>
     </div>
 

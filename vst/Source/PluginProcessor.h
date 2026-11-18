@@ -24,7 +24,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 2.0; }
+    double getTailLengthSeconds() const override { return 12.0; }   // longest reverb decay
 
     // The factory presets are exposed to the host as programs.
     int getNumPrograms() override { return (int) presetManager.factory().size(); }
@@ -71,6 +71,8 @@ public:
     std::atomic<float> statDynamics { 0.0f };
     std::atomic<float> statBend { 0.0f };
     std::atomic<float> statPlunger { 0.5f };
+    std::atomic<int>   statArticulation { 0 };
+    void setUiArticulation (int a) { uiArticulation = a; }
 
 private:
     void applyPreset (const bk::PresetData&);
@@ -85,6 +87,7 @@ private:
     std::atomic<bool> panicRequested { false };
     std::atomic<float> uiModWheel { -1.0f };   // -1 = no pending change
     std::atomic<float> uiBreath { -1.0f };
+    std::atomic<int> uiArticulation { -1 };    // -1 = no pending change
 
     mutable juce::CriticalSection presetLock;
     PresetInfo presetInfo;

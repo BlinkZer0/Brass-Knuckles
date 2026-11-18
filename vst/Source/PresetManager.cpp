@@ -159,7 +159,7 @@ juce::File PresetManager::fileForName (const juce::String& name) const
 
 //==============================================================================
 // Migration. Each step takes a preset object of version N to N + 1. The web
-// build has the same steps (web-host.js, migratePreset). Add a step whenever a
+// build has the same steps (webhost/factory.js, bkMigratePreset). Add a step whenever a
 // release renames a parameter or changes what a stored value means; plain
 // additions need nothing (missing params load at their defaults).
 void PresetManager::migrate (juce::var& json)

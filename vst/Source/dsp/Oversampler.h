@@ -101,7 +101,7 @@ struct HalfbandDown
 };
 
 //==============================================================================
-enum ShaperType { shapeBrass, shapeReed, shapeEdge };
+enum ShaperType { shapeBrass, shapeReed, shapeEdge, shapeTube, shapeTape };
 
 // Padé tanh: exact 1 at |x| = 3, monotonic, smooth.
 inline double tanhRational (double x)
@@ -124,6 +124,13 @@ inline double shapeFn (int type, double x)
         {
             const double c = clampd (x, -1.0, 1.0);
             return 1.5 * c - 0.5 * c * c * c;
+        }
+        case shapeTube:   // FX drive: biased tanh (even harmonics), DC of the bias removed
+            return tanhRational (x + 0.25) - tanhRational (0.25);
+        case shapeTape:   // FX drive: soft, symmetric, gentle knee
+        {
+            const double t = tanhRational (0.8 * x);
+            return t / 0.8 - 0.15 * t * t * t;
         }
         default:          // brass: tanh with asymmetry (the steepening, "brassy" edge)
         {

@@ -49,6 +49,7 @@ struct Event
     Type type;
     int a = 0;       // note / cc number
     double b = 0;    // velocity (0..127) or value (0..1, bend -1..1)
+    int ch = 0;      // MIDI channel index 0..15 (0 = channel 1)
 };
 
 struct Audio
@@ -61,12 +62,12 @@ inline void applyEvent (SynthEngine& e, const Event& ev)
 {
     switch (ev.type)
     {
-        case Event::On:           e.noteOn (ev.a, (int) ev.b); break;
-        case Event::Off:          e.noteOff (ev.a); break;
-        case Event::CC:           e.setController (ev.a, ev.b); break;
-        case Event::Bend:         e.setPitchBend (ev.b); break;
-        case Event::Pressure:     e.setChannelPressure (ev.b); break;
-        case Event::PolyPressure: e.setPolyPressure (ev.a, ev.b); break;
+        case Event::On:           e.noteOn (ev.a, (int) ev.b, ev.ch); break;
+        case Event::Off:          e.noteOff (ev.a, ev.ch); break;
+        case Event::CC:           e.setController (ev.a, ev.b, ev.ch); break;
+        case Event::Bend:         e.setPitchBend (ev.b, ev.ch); break;
+        case Event::Pressure:     e.setChannelPressure (ev.b, ev.ch); break;
+        case Event::PolyPressure: e.setPolyPressure (ev.a, ev.b, ev.ch); break;
         case Event::Sustain:      e.setSustain (ev.b >= 0.5); break;
     }
 }

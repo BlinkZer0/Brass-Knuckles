@@ -17,6 +17,25 @@ int runBench();
 int runBrassChecks (bool verbose);
 int runHostCheck (const juce::String& path);
 int runAliasCheck (bool verbose);
+int runBenchParts();
+int runClickChecks (bool verbose);
+int runParity (const juce::File& scenarios);
+int runHfDump (const juce::String& spec, double t0, double t1);
+double presetLoudness (const PresetData&);
+
+// Level matching holds: every factory preset within +-1 dB of the -18 dB target.
+static void testLoudness (const PresetManager& pm)
+{
+    double lo = 0, hi = -100;
+    for (const auto& p : pm.factory())
+    {
+        const double db = 20 * std::log10 (std::max (presetLoudness (p), 1e-9));
+        lo = std::min (lo, db); hi = std::max (hi, db);
+        if (std::abs (db + 18.0) > 1.0) { ++failures; std::printf ("FAIL loudness %-34s %.2f dB\n", (p.category + "/" + p.name).toRawUTF8(), db); }
+    }
+    std::printf ("%-4s loudness of %d presets: %.2f .. %.2f dB (target -18 +- 1)\n", lo >= -19 && hi <= -17 ? "ok" : "FAIL",
+                 (int) pm.factory().size(), lo, hi);
+}
 
 static void testParamTable()
 {
@@ -48,12 +67,16 @@ static void testFactoryPresets (const PresetManager& pm)
 {
     const auto& f = pm.factory();
     std::printf ("factory presets: %d\n", (int) f.size());
-    CHECK (f.size() >= 12);
-    juce::StringArray cats;
+    CHECK (f.size() == 120);
+    juce::StringArray cats, names;
+    std::map<juce::String, int> perCat;
     for (const auto& p : f)
     {
         cats.addIfNotAlreadyThere (p.category);
+        ++perCat[p.category];
         CHECK (p.name.isNotEmpty());
+        CHECK (! names.contains (p.name));   // names are unique across the whole library
+        names.add (p.name);
         for (int i = 0; i < kNumParams; ++i)
         {
             const float v = p.values[(size_t) i];
@@ -66,6 +89,7 @@ static void testFactoryPresets (const PresetManager& pm)
     const juce::StringArray expected { "Trumpet", "Flugelhorn", "Trombone", "French Horn", "Tuba/Low Brass", "Soprano Sax",
                                        "Alto Sax", "Tenor Sax", "Baritone Sax", "Sections", "Synth Brass", "Hybrid/FX" };
     CHECK (cats == expected);
+    for (const auto& c : expected) CHECK (perCat[c] == 10);
     // templates resolved: Lead Trumpet inherits acoustic -> brass
     CHECK (f[0].name == "Lead Trumpet" && f[0].values[voiceMode] == 2.0f && f[0].values[(size_t) oscParam (2, oOn)] == 1.0f
            && f[0].values[(size_t) oscParam (0, oCut)] == 3.0f);
@@ -135,8 +159,10 @@ static void testPresetRenders (const PresetManager& pm)
         ev.push_back ({ sec (1.2), Event::Off, n, 0.0 });
         ev.push_back ({ sec (1.2), Event::Off, n + 4, 0.0 });
         ev.push_back ({ sec (1.2), Event::Off, n + 7, 0.0 });
-        const auto a = render (v, ev, 4.0);
-        const double level = rms (a, sec (0.3), sec (1.1)), pk = peak (a), tail = rms (a, sec (3.7), sec (4.0));
+        // release + reverb: wait 1.5 decay times (past -80 dB) before the tail must be silent
+        const double len = 4.0 + (v[rvOn] >= 0.5f ? 1.5 * v[rvDecay] : 0.0);
+        const auto a = render (v, ev, len);
+        const double level = rms (a, sec (0.3), sec (1.1)), pk = peak (a), tail = rms (a, sec (len - 0.3), sec (len));
         const bool ok = level > 0.01 && pk < 0.97 && tail < 1e-4;
         if (! ok) ++failures;
         std::printf ("%-4s render %-34s rms %.3f  peak %.3f  tail %.1e\n", ok ? "ok" : "FAIL",
@@ -326,6 +352,289 @@ static void testModeledEngine()
     }
 }
 
+// Pitch (Hz) from rising zero crossings of the left channel over [t, t + win).
+static double pitchAt (const Audio& a, double t, double win = 0.03)
+{
+    int first = -1, last = -1, count = 0;
+    for (int i = std::max (1, sec (t)); i < std::min (a.size(), sec (t + win)); ++i)
+        if (a.L[(size_t) i - 1] <= 0 && a.L[(size_t) i] > 0)
+        {
+            if (first < 0) first = i;
+            last = i;
+            ++count;
+        }
+    return count >= 2 ? (count - 1) * kSr / (last - first) : 0.0;
+}
+
+static double semisBetween (double hz, double ref) { return hz > 0 ? 12 * std::log2 (hz / ref) : -99; }
+
+// Phase 3: articulations, section players, MPE, analog engine.
+static void testPerformance()
+{
+    // a pure sine voice so pitch can be read from zero crossings
+    auto base = defaultValues();
+    auto set = [] (Values& v, const char* id, float x) { v[(size_t) paramIndex (id)] = x; };
+    for (const char* id : { "vibDepth", "vibAmp", "lipAmt", "brNoise", "bodyMix", "brsAmt", "dynBrass", "dynBright" }) set (base, id, 0);
+    set (base, "osc1Shape", 0); set (base, "osc1Cut", 64);
+    const double c4 = noteHz (60);
+    const int ks = 12;   // keyswitch base C0
+
+    // keyswitch notes are silent and latch; FALL bends down after release, then the voice ends
+    {
+        const auto a = render (base, { { 0, Event::On, ks + 1, 100.0 }, { sec (0.02), Event::Off, ks + 1, 0.0 },
+                                       { sec (0.1), Event::On, 60, 100.0 }, { sec (0.5), Event::Off, 60, 0.0 } }, 1.4);
+        CHECK (rms (a, 0, sec (0.09)) < 1e-6);
+        CHECK (std::abs (semisBetween (pitchAt (a, 0.4), c4)) < 0.3);
+        const double during = semisBetween (pitchAt (a, 0.5 + 0.35 * 0.6, 0.06), c4);
+        std::printf ("     fall: %.2f st at 60%% of the fall\n", during);
+        CHECK (during < -1.5);
+        CHECK (rms (a, sec (1.25), sec (1.4)) < 1e-5);
+    }
+    // DOIT bends up after release
+    {
+        const auto a = render (base, { { 0, Event::On, ks + 2, 100.0 }, { sec (0.1), Event::On, 60, 100.0 }, { sec (0.5), Event::Off, 60, 0.0 } }, 1.0);
+        CHECK (semisBetween (pitchAt (a, 0.5 + 0.3 * 0.6, 0.05), c4) > 1.0);
+    }
+    // SCOOP starts below and arrives; RIP starts far below in steps
+    {
+        const auto s = render (base, { { 0, Event::On, ks + 5, 100.0 }, { sec (0.1), Event::On, 60, 100.0 } }, 0.6);
+        CHECK (semisBetween (pitchAt (s, 0.1 + 0.015, 0.025), c4) < -1.0);
+        CHECK (std::abs (semisBetween (pitchAt (s, 0.4), c4)) < 0.3);
+        const auto r = render (base, { { 0, Event::On, ks + 3, 100.0 }, { sec (0.1), Event::On, 60, 100.0 } }, 0.6);
+        CHECK (semisBetween (pitchAt (r, 0.1, 0.03), c4) < -3.0);
+        CHECK (std::abs (semisBetween (pitchAt (r, 0.4), c4)) < 0.3);
+    }
+    // SHAKE trills up; NORMAL turns articulations off again
+    {
+        const auto a = render (base, { { 0, Event::On, ks + 4, 100.0 }, { sec (0.1), Event::On, 60, 100.0 } }, 1.2);
+        double lo = 99, hi = -99;
+        for (double t = 0.5; t < 1.1; t += 0.02) { const double s = semisBetween (pitchAt (a, t, 0.02), c4); lo = std::min (lo, s); hi = std::max (hi, s); }
+        std::printf ("     shake: pitch range %.2f .. %.2f st\n", lo, hi);
+        CHECK (hi - lo > 2.0 && lo > -0.5);
+        const auto n = render (base, { { 0, Event::On, ks + 4, 100.0 }, { sec (0.02), Event::On, ks, 100.0 }, { sec (0.1), Event::On, 60, 100.0 } }, 1.2);
+        CHECK (std::abs (semisBetween (pitchAt (n, 0.9, 0.05), c4)) < 0.3);
+    }
+    // keyswitches off: the C0 key just plays
+    {
+        auto v = base;
+        set (v, "artKs", 0);
+        const auto a = render (v, { { 0, Event::On, ks + 1, 100.0 } }, 0.3);
+        CHECK (rms (a, sec (0.1), sec (0.3)) > 0.01);
+    }
+    // AUTO: a soft note after a gap scoops, a medium one doesn't; a hard held note falls on release
+    {
+        auto v = base;
+        set (v, "artAuto", 1);
+        const auto soft = render (v, { { 0, Event::On, 60, 30.0 } }, 0.4);
+        CHECK (semisBetween (pitchAt (soft, 0.015, 0.025), c4) < -1.0);
+        const auto mid = render (v, { { 0, Event::On, 60, 80.0 } }, 0.4);
+        CHECK (std::abs (semisBetween (pitchAt (mid, 0.015, 0.025), c4)) < 0.3);
+        const auto hard = render (v, { { 0, Event::On, 60, 127.0 }, { sec (0.5), Event::Off, 60, 0.0 } }, 1.0);
+        CHECK (semisBetween (pitchAt (hard, 0.5 + 0.35 * 0.6, 0.06), c4) < -1.5);
+    }
+    // SECTION: 4 players are one note, spread in stereo, about as loud as one player
+    {
+        auto v = base;
+        set (v, "osc1Shape", 2); set (v, "osc1Cut", 6);
+        // players a few cents apart beat slowly (~1 Hz): measure over 2 s so the level is an average
+        const auto solo = render (v, { { 0, Event::On, 60, 100.0 } }, 2.5);
+        set (v, "secPlayers", 4);
+        const auto sect = render (v, { { 0, Event::On, 60, 100.0 } }, 2.5);
+        double lr = 0, ll = 0, rr = 0;
+        for (int i = sec (0.3); i < sec (2.5); ++i) { lr += sect.L[(size_t) i] * sect.R[(size_t) i]; ll += sect.L[(size_t) i] * sect.L[(size_t) i]; rr += sect.R[(size_t) i] * sect.R[(size_t) i]; }
+        const double corr = lr / std::sqrt (ll * rr), ratioDb = 20 * std::log10 (rms (sect, sec (0.3), sec (2.5)) / rms (solo, sec (0.3), sec (2.5)));
+        std::printf ("     section x4: L/R correlation %.2f, level %+.1f dB vs. one player\n", corr, ratioDb);
+        CHECK (corr < 0.95);
+        CHECK (std::abs (ratioDb) < 3.0);
+
+        auto ePtr = std::make_unique<SynthEngine>();
+        auto& e = *ePtr;
+        e.prepare (kSr);
+        set (v, "secPlayers", 8);
+        e.setParams (makeEngineParams ([&v] (int i) { return v[(size_t) i]; }));
+        std::array<float, 256> L {}, R {};
+        e.noteOn (60, 100);
+        e.render (L.data(), R.data(), 256);
+        CHECK (e.activeVoices() == 1);   // counts notes, not players
+        for (int n = 0; n < 40; ++n) e.noteOn (30 + n, 100);
+        e.render (L.data(), R.data(), 256);
+        CHECK (e.activeVoices() == 32);  // 32 notes x 8 players fits the voice pool
+    }
+    // MPE: a member channel's bend moves only its own note; channel 1 bends everything
+    {
+        auto v = base;
+        set (v, "mpeOn", 1); set (v, "mpeBend", 12);
+        auto noteOn = [] (int t, int note, int ch) { Event e { t, Event::On, note, 100.0 }; e.ch = ch; return e; };
+        auto bend = [] (int t, double val, int ch) { Event e { t, Event::Bend, 0, val }; e.ch = ch; return e; };
+        const auto own = render (v, { noteOn (0, 60, 1), bend (sec (0.2), 1.0, 1) }, 0.6);
+        CHECK (std::abs (semisBetween (pitchAt (own, 0.45), c4) - 12) < 0.4);
+        const auto other = render (v, { noteOn (0, 60, 2), bend (sec (0.2), 1.0, 1) }, 0.6);
+        CHECK (std::abs (semisBetween (pitchAt (other, 0.45), c4)) < 0.3);
+        const auto master = render (v, { noteOn (0, 60, 2), bend (sec (0.2), 1.0, 0) }, 0.6);
+        CHECK (std::abs (semisBetween (pitchAt (master, 0.45), c4) - 2) < 0.3);   // Bend Range 2
+    }
+    // ANALOG engine: unison spreads in stereo, the blat makes the attack brighter than the sustain
+    {
+        auto v = base;
+        set (v, "engineMode", 1); set (v, "anaUnison", 3); set (v, "anaSpread", 1); set (v, "anaBlat", 1);
+        set (v, "osc1Shape", 2); set (v, "osc1Cut", 3);
+        const auto a = render (v, { { 0, Event::On, 48, 120.0 } }, 0.8);
+        double lr = 0, ll = 0, rr = 0;
+        for (int i = sec (0.3); i < sec (0.8); ++i) { lr += a.L[(size_t) i] * a.R[(size_t) i]; ll += a.L[(size_t) i] * a.L[(size_t) i]; rr += a.R[(size_t) i] * a.R[(size_t) i]; }
+        CHECK (lr / std::sqrt (ll * rr) < 0.95);
+        const double early = harmonicCentroid (a, sec (0.005), noteHz (48), 2048), late = harmonicCentroid (a, sec (0.5), noteHz (48), 2048);
+        std::printf ("     analog blat: harmonic centroid %.0f Hz on the attack, %.0f Hz sustained\n", early, late);
+        CHECK (early > late * 1.3);
+    }
+}
+
+static double correlation (const Audio& a, int from, int to)
+{
+    double lr = 0, ll = 0, rr = 0;
+    for (int i = from; i < std::min (to, a.size()); ++i)
+    {
+        lr += a.L[(size_t) i] * a.R[(size_t) i]; ll += a.L[(size_t) i] * a.L[(size_t) i]; rr += a.R[(size_t) i] * a.R[(size_t) i];
+    }
+    return ll > 0 && rr > 0 ? lr / std::sqrt (ll * rr) : 1.0;
+}
+
+// Phase 4: LFOs, mod matrix (per-voice and global destinations), FX chain.
+static void testModulationFx()
+{
+    auto base = defaultValues();
+    auto set = [] (Values& v, const char* id, float x) { v[(size_t) paramIndex (id)] = x; };
+    for (const char* id : { "vibDepth", "vibAmp", "lipAmt", "brNoise", "bodyMix", "brsAmt", "dynBrass", "dynBright" }) set (base, id, 0);
+    set (base, "osc1Shape", 0); set (base, "osc1Cut", 64);
+    auto pitchRange = [] (const Audio& a, double from, double to)
+    {
+        double lo = 99, hi = -99;
+        for (double t = from; t < to; t += 0.02)
+        {
+            const double s = semisBetween (pitchAt (a, t, 0.02), noteHz (60));
+            lo = std::min (lo, s); hi = std::max (hi, s);
+        }
+        return hi - lo;
+    };
+
+    // LFO 1 (per voice, 5 Hz sine) -> Pitch (All): the pitch wobbles; via Mod Wheel: only with the wheel up
+    {
+        auto v = base;
+        set (v, "lfo1On", 1); set (v, "lfo1Rate", 5); set (v, "lfo1Mode", 1);
+        set (v, "mod1Src", srcLfo1); set (v, "mod1Dst", dstPitchAll); set (v, "mod1Amt", 0.05f);   // +-0.6 st
+        const auto a = render (v, { { 0, Event::On, 60, 100.0 } }, 1.2);
+        CHECK (pitchRange (a, 0.3, 1.1) > 0.7);
+        set (v, "mod1Via", srcModWheel);
+        const auto still = render (v, { { 0, Event::On, 60, 100.0 } }, 1.2);
+        CHECK (pitchRange (still, 0.3, 1.1) < 0.15);
+        const auto wheel = render (v, { { 0, Event::CC, 1, 1.0 }, { 0, Event::On, 60, 100.0 } }, 1.2);
+        CHECK (pitchRange (wheel, 0.3, 1.1) > 0.7);
+    }
+    // Random -> Pan: two notes land in different places
+    {
+        auto v = base;
+        set (v, "mod1Src", srcRandom); set (v, "mod1Dst", dstPan); set (v, "mod1Amt", 1);
+        const auto b = render (v, { { 0, Event::On, 60, 100.0 }, { sec (0.2), Event::Off, 60, 0.0 }, { sec (0.6), Event::On, 64, 100.0 } }, 1.0);
+        auto balance = [] (const Audio& x, double t0, double t1)
+        {
+            double l = 0, r = 0;
+            for (int i = sec (t0); i < sec (t1); ++i) { l += x.L[(size_t) i] * x.L[(size_t) i]; r += x.R[(size_t) i] * x.R[(size_t) i]; }
+            return 10 * std::log10 ((l + 1e-12) / (r + 1e-12));
+        };
+        const double b1 = balance (b, 0.05, 0.18), b2 = balance (b, 0.75, 0.95);
+        std::printf ("     random pan: note 1 %+.1f dB L/R, note 2 %+.1f dB L/R\n", b1, b2);
+        CHECK (std::abs (b1 - b2) > 1.0);
+    }
+    // tempo-synced square LFO (1/8 at 120 BPM = 4 Hz) -> Amplitude: 8 gates in 2 s
+    {
+        auto v = base;
+        set (v, "lfo1On", 1); set (v, "lfo1Wave", 2); set (v, "lfo1Sync", 1); set (v, "lfo1Div", 8); set (v, "lfo1Trig", 1);
+        set (v, "mod1Src", srcLfo1); set (v, "mod1Dst", dstAmp); set (v, "mod1Amt", -0.9f);
+        const auto a = render (v, { { 0, Event::On, 60, 100.0 } }, 2.3);
+        int edges = 0;
+        bool loud = false;
+        const double mid = rms (a, sec (0.2), sec (2.2));
+        for (int w = sec (0.2); w + sec (0.01) < sec (2.2); w += sec (0.01))
+        {
+            const bool now = rms (a, w, w + sec (0.01)) > mid;
+            if (now && ! loud) ++edges;
+            loud = now;
+        }
+        std::printf ("     synced LFO: %d gates in 2 s (expect 8)\n", edges);
+        CHECK (edges >= 7 && edges <= 9);
+    }
+    // global destination: Mod Wheel -> Plunger opens a closed plunger
+    {
+        auto v = base;
+        set (v, "osc1Shape", 2); set (v, "osc1Cut", 32);
+        set (v, "muteType", 4); set (v, "muteSrc", 0); set (v, "mutePlunger", 0);
+        set (v, "mod1Src", srcModWheel); set (v, "mod1Dst", dstPlunger); set (v, "mod1Amt", 1);
+        const auto closed = render (v, { { 0, Event::On, 48, 100.0 } }, 0.6);
+        const auto opened = render (v, { { 0, Event::CC, 1, 1.0 }, { 0, Event::On, 48, 100.0 } }, 0.6);
+        CHECK (centroid (opened, sec (0.3)) > centroid (closed, sec (0.3)) * 1.5);
+    }
+
+    // ---- FX ---------------------------------------------------------------------
+    auto tone = base;
+    set (tone, "osc1Shape", 2); set (tone, "osc1Cut", 8);
+    const auto dry = render (tone, { { 0, Event::On, 55, 100.0 } }, 1.5);
+    const double dryLevel = rms (dry, sec (0.5), sec (1.5));
+    auto levelDb = [&] (const Audio& a) { return 20 * std::log10 (rms (a, sec (0.5), sec (1.5)) / dryLevel); };
+    // reverb: a tail after the note, level-matched, and a long silence ends at exactly 0 (no denormals)
+    {
+        auto v = tone;
+        set (v, "rvOn", 1); set (v, "rvDecay", 2); set (v, "rvMix", 0.3f);
+        const auto wet = render (v, { { 0, Event::On, 55, 100.0 } }, 1.5);
+        std::printf ("     reverb mix 30%%: %+.1f dB vs dry\n", levelDb (wet));
+        CHECK (std::abs (levelDb (wet)) < 3.0);
+        const auto tail = render (v, { { 0, Event::On, 55, 100.0 }, { sec (0.5), Event::Off, 55, 0.0 } }, 1.4);
+        CHECK (rms (tail, sec (1.0), sec (1.3)) > 1e-3);
+        set (v, "rvDecay", 0.3f); set (v, "rvType", 0);
+        const auto end = render (v, { { 0, Event::On, 55, 100.0 }, { sec (0.2), Event::Off, 55, 0.0 } }, 30.0);
+        CHECK (end.L.back() == 0.0f && end.R.back() == 0.0f);
+    }
+    // drive: level-matched, adds harmonics
+    {
+        auto v = tone;
+        set (v, "osc1Cut", 1.5f);
+        const auto clean = render (v, { { 0, Event::On, 55, 100.0 } }, 1.5);
+        set (v, "fxDrvOn", 1); set (v, "fxDrvAmt", 0.8f); set (v, "fxDrvTone", 1);
+        const auto driven = render (v, { { 0, Event::On, 55, 100.0 } }, 1.5);
+        const double db = 20 * std::log10 (rms (driven, sec (0.5), sec (1.5)) / rms (clean, sec (0.5), sec (1.5)));
+        // share of the energy above the 4th harmonic (drive adds upper harmonics)
+        const double f0 = noteHz (55);
+        auto upper = [f0] (const Audio& a) { return bandEnergy (a, sec (0.5), 3.5 * f0, 16000) / bandEnergy (a, sec (0.5), 20, 16000); };
+        std::printf ("     drive 80%%: %+.1f dB vs clean, energy above 4th harmonic %.1f%% -> %.1f%%\n", db,
+                     100 * upper (clean), 100 * upper (driven));
+        CHECK (std::abs (db) < 3.0);
+        CHECK (upper (driven) > upper (clean) * 2);
+    }
+    // EQ: +12 dB low shelf lifts the lows
+    {
+        auto v = tone;
+        set (v, "eqOn", 1); set (v, "eqLoGain", 12); set (v, "eqLoFreq", 300);
+        const auto eq = render (v, { { 0, Event::On, 43, 100.0 } }, 1.0);
+        const auto flat = render (tone, { { 0, Event::On, 43, 100.0 } }, 1.0);
+        CHECK (bandEnergy (eq, sec (0.4), 50, 200) > bandEnergy (flat, sec (0.4), 50, 200) * 6);
+    }
+    // chorus widens a mono voice and keeps the level; width 0 = mono, width 2 = wider
+    {
+        auto v = tone;
+        set (v, "chOn", 1); set (v, "chMix", 0.6f);
+        const auto ch = render (v, { { 0, Event::On, 55, 100.0 } }, 1.5);
+        std::printf ("     chorus: L/R correlation %.2f, %+.1f dB\n", correlation (ch, sec (0.5), sec (1.5)), levelDb (ch));
+        CHECK (correlation (ch, sec (0.5), sec (1.5)) < 0.95);
+        CHECK (std::abs (levelDb (ch)) < 3.0);
+        set (v, "stWidth", 0);
+        const auto mono = render (v, { { 0, Event::On, 55, 100.0 } }, 1.0);
+        double diff = 0;
+        for (int i = 0; i < mono.size(); ++i) diff = std::max (diff, (double) std::abs (mono.L[(size_t) i] - mono.R[(size_t) i]));
+        CHECK (diff < 1e-6);
+        set (v, "stWidth", 2);
+        const auto wide = render (v, { { 0, Event::On, 55, 100.0 } }, 1.5);
+        CHECK (correlation (wide, sec (0.5), sec (1.5)) < correlation (ch, sec (0.5), sec (1.5)) - 0.05);
+    }
+}
+
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI init; // keeps JUCE leak checks quiet
@@ -337,8 +646,12 @@ int main (int argc, char* argv[])
     if (cmd == "--render-all" && argc >= 3) return runRenderAll (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]));
     if (cmd == "--loudness") return runLoudness();
     if (cmd == "--bench") return runBench();
+    if (cmd == "--bench-parts") return runBenchParts();
+    if (cmd == "--clicks") return runClickChecks (true) == 0 ? 0 : 1;
+    if (cmd == "--hf" && argc >= 5) return runHfDump (argv[2], juce::String (argv[3]).getDoubleValue(), juce::String (argv[4]).getDoubleValue());
     if (cmd == "--brass") return runBrassChecks (true) + runAliasCheck (true) == 0 ? 0 : 1;
     if (cmd == "--host-check" && argc >= 3) return runHostCheck (argv[2]);
+    if (cmd == "--parity" && argc >= 3) return runParity (juce::File::getCurrentWorkingDirectory().getChildFile (argv[2]));
 
     PresetManager pm;
     testParamTable();
@@ -346,9 +659,13 @@ int main (int argc, char* argv[])
     testPresetFiles (pm);
     testEngineBasics();
     testModeledEngine();
+    testPerformance();
+    testModulationFx();
     testPresetRenders (pm);
     failures += runBrassChecks (false);
     failures += runAliasCheck (false);
+    failures += runClickChecks (false);
+    testLoudness (pm);
 
     std::printf ("user preset folder: %s\n", PresetManager::userFolder().getFullPathName().toRawUTF8());
     std::printf (failures == 0 ? "ALL PASSED\n" : "%d FAILURE(S)\n", failures);

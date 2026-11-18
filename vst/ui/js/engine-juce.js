@@ -33,6 +33,7 @@ class JuceEngine {
   panic() { this.emit('panic'); }
   modWheel(value) { this.emit('modWheel', { value }); }
   breath(value) { this.emit('breath', { value }); }   // on-screen breath controller (sent as the Breath CC)
+  articulation(index) { this.emit('articulation', { index }); } // latch one, same as its keyswitch
 
   // right-click on a control -> the host's parameter menu (automation, MIDI learn...)
   paramMenu(id, x, y) { this.emit('paramMenu', { id, x: Math.round(x), y: Math.round(y) }); }

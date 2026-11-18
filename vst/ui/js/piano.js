@@ -20,6 +20,7 @@ class Piano {
     this.pointers = new Map();   // pointerId -> note
     this.range = null;           // [lo, hi] realistic range, or null
     this.ks = null;              // [lo, hi] keyswitch notes, or null
+    this.ksActive = null;        // the latched articulation's keyswitch
     this.build(container);
   }
 
@@ -61,6 +62,7 @@ class Piano {
   setBase(note) { this.base = note; this.render(); }
   setRange(range) { this.range = range; this.render(); }
   setKeyswitches(ks) { this.ks = ks; this.render(); }
+  setActiveKeyswitch(note) { this.ksActive = note; this.render(); }
 
   setNote(note, on) {
     if (on) this.active.add(note); else this.active.delete(note);
@@ -86,6 +88,7 @@ class Piano {
       k.classList.toggle('down', this.active.has(n));
       k.classList.toggle('out', !!this.range && (n < this.range[0] || n > this.range[1]));
       k.classList.toggle('ks', !!this.ks && n >= this.ks[0] && n <= this.ks[1]);
+      k.classList.toggle('ks-active', this.ksActive === n);
     });
     this.labels.forEach(t => { t.textContent = midiNoteName(this.base + Number(t.dataset.label)); });
     this.markSpan(this.rangeMark, this.range);

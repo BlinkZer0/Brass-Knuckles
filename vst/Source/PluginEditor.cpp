@@ -95,6 +95,7 @@ juce::WebBrowserComponent::Options BrassKnucklesEditor::makeBrowserOptions()
         })
         .withEventListener ("modWheel", [this] (const juce::var& e) { processor.setUiModWheel ((float) e["value"]); })
         .withEventListener ("breath",   [this] (const juce::var& e) { processor.setUiBreath ((float) e["value"]); })
+        .withEventListener ("articulation", [this] (const juce::var& e) { processor.setUiArticulation (juce::jlimit (0, 5, (int) e["index"])); })
         .withEventListener ("loadPreset", [this] (const juce::var& e)
         {
             juce::String error;
@@ -290,6 +291,8 @@ void BrassKnucklesEditor::sendConfig()
         { "blockSize",  processor.getBlockSize() },
         { "wrapper",    wrapper },
         { "voices",     kMaxPoly },
+        // dev / screenshots: BK_UI_PAGE=harm (etc.) opens that page first
+        { "startPage",  juce::SystemStats::getEnvironmentVariable ("BK_UI_PAGE", {}) },
     }));
 }
 
@@ -346,5 +349,6 @@ void BrassKnucklesEditor::timerCallback()
         { "dynamics",   processor.statDynamics.load() },
         { "bend",       processor.statBend.load() },
         { "plunger",    processor.statPlunger.load() },
+        { "articulation", processor.statArticulation.load() },
     }));
 }

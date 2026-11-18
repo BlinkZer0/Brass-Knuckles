@@ -249,6 +249,9 @@
     harm: '32 harmonics, each with its own envelope: upper harmonics arrive later and fade first',
     tone: 'Brassiness grows with dynamics · body and mute filters follow the instrument',
     attack: 'How each note starts and breathes',
+    perform: 'Keyswitches latch an articulation · section players · analog unison · MPE',
+    mod: 'Two LFOs and 12 routes: any source x via -> any destination',
+    fx: 'Drive -> EQ -> chorus -> reverb -> width, after the patch level',
   };
   let activePage = location.hash.slice(1) || store.get('bk.page') || 'play'; // #osc opens a page directly (tests)
   function showPage(name) {
@@ -686,11 +689,264 @@
     });
   }
 
+  // ====================================================== PERFORM page ======
+  const ART_NAMES = ['NORMAL', 'FALL', 'DOIT', 'RIP', 'SHAKE', 'SCOOP'];
+  const ART_ICONS = ['M2 9 H36', 'M2 5 H20 Q30 5 36 16', 'M2 13 H20 Q30 13 36 2', 'M2 16 L8 13 L12 10 L16 7 L20 5 H36',
+                     'M2 9 H10 L13 4 L16 9 L19 4 L22 9 L25 4 L28 9 H36', 'M2 16 Q10 4 18 5 H36'];
+  let artNow = 0;
+  const artBtns = [];
+  {
+    const r1 = $('#perform-row-1'), r2 = $('#perform-row-2');
+    const ks = control(ToggleButton, 'artKs', 'KEYSWITCH');
+    const art = makePanel('ARTICULATIONS', ks.el);
+    const bw = el('div', 'art-buttons');
+    ART_NAMES.forEach((name, i) => {
+      const b = el('button', 'art-btn', `<svg viewBox="0 0 38 18"><path d="${ART_ICONS[i]}"/></svg>${name}<span class="ks"></span>`);
+      b.type = 'button';
+      b.title = 'Latch this articulation (same as its keyswitch). Fall / Doit act when you release a note, Rip / Scoop on the attack, Shake while holding.';
+      b.addEventListener('click', () => { engine.articulation(i); setArt(i); });
+      bw.appendChild(b);
+      artBtns.push(b);
+    });
+    art.appendChild(bw);
+    const kk = el('div', 'env-knobs');
+    kk.style.gridTemplateColumns = 'repeat(11, minmax(0, 1fr))';
+    ['artKsBase', 'artFallRng', 'artFallTime', 'artDoitRng', 'artDoitTime', 'artRipRng', 'artRipTime',
+     'artShakeRng', 'artShakeRate', 'artScoopRng', 'artScoopTime'].forEach(id => addKnob(kk, id, 'knob-md'));
+    art.appendChild(kk);
+    r1.appendChild(art);
+
+    const auto = makePanel('AUTO ARTICULATIONS', control(ToggleButton, 'artAuto').el);
+    knobRow(auto, ['artAutoGap', 'artAutoLo', 'artAutoHi'], 'knob-md');
+    auto.appendChild(el('div', 'kbd-hint', 'After a gap: soft notes scoop, hard notes rip.<br>A hard note held to the end of a phrase falls.'));
+    r1.appendChild(auto);
+
+    const sect = makePanel('SECTION');
+    const pg = makeGraph(sect);
+    pg.root.classList.add('players-graph');
+    knobRow(sect, ['secPlayers', 'secDetune', 'secTiming', 'secVibDesync', 'secTimbre', 'secWidth'], 'knob-md');
+    r2.appendChild(sect);
+
+    const ana = makePanel('ANALOG ENGINE · UNISON', control(Segmented, 'engineMode').el);
+    knobRow(ana, ['anaUnison', 'anaDetune', 'anaSpread', 'anaBlat'], 'knob-md');
+    r2.appendChild(ana);
+
+    const mpe = makePanel('MPE', control(ToggleButton, 'mpeOn').el);
+    knobRow(mpe, ['mpeBend', 'bendRange'], 'knob-md');
+    mpe.appendChild(el('div', 'kbd-hint', 'Per-note bend, pressure (→ dynamics) and slide CC74 (→ brightness). Channel 1 = master.'));
+    r2.appendChild(mpe);
+
+    // stereo map of the players of one note (same spread maths as the engine, without the random part)
+    function drawPlayers() {
+      const [W, H] = graphSize(pg);
+      const analog = Math.round(values.engineMode) === 1, sec = Math.round(values.secPlayers);
+      const N = clamp(analog ? sec * Math.round(values.anaUnison) : sec, 1, 8);
+      const width = sec > 1 ? Math.max(values.secWidth, analog ? values.anaSpread : 0) : (analog ? values.anaSpread : 0);
+      let dots = '';
+      for (let p = 0; p < N; p++) {
+        const pos = N === 1 ? 0 : -1 + 2 * p / (N - 1), pan = clamp(pos * width, -1, 1);
+        const cents = (analog ? values.anaDetune * pos : 0) + (sec > 1 ? values.secDetune * 0.6 * pos : 0);
+        const x = W / 2 + pan * (W / 2 - 12), y = H / 2 - clamp(cents / 50, -1, 1) * (H / 2 - 10);
+        dots += `<circle class="pl-dot${p === 0 ? ' lead' : ''}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${p === 0 ? 5 : 4}"/>`;
+      }
+      pg.svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      pg.svg.innerHTML = `<path class="gr-zero" d="M${W / 2} 0 V${H} M0 ${H / 2} H${W}"/>
+        <text class="gr-label" x="4" y="${H - 4}">L</text><text class="gr-label" x="${W - 10}" y="${H - 4}">R</text>${dots}`;
+      pg.legend.innerHTML = N > 1 ? `<b>${N} players</b> · up/down = detune` : 'solo (1 player)';
+      sect.classList.toggle('off', sec <= 1);
+      ana.classList.toggle('off', !analog);
+    }
+    refreshers.push((ids) => { if (touches(ids, 'sec', 'ana', 'engineMode')) drawPlayers(); });
+    refreshers.push((ids) => {
+      if (!touches(ids, 'artKs')) return;
+      const base = Math.round(values.artKsBase), on = values.artKs >= 0.5;
+      artBtns.forEach((b, i) => { b.querySelector('.ks').textContent = on ? midiNoteName(base + i) : '—'; });
+      piano.setKeyswitches(on ? [base, base + 5] : null);
+      piano.setActiveKeyswitch(on ? base + artNow : null);
+    });
+  }
+  function setArt(i) {
+    artNow = i;
+    artBtns.forEach((b, k) => b.classList.toggle('on', k === i));
+    piano.setActiveKeyswitch(values.artKs >= 0.5 ? Math.round(values.artKsBase) + i : null);
+    $('#perform-led').classList.toggle('on', i > 0 || values.artAuto >= 0.5 || values.secPlayers > 1.5 || values.mpeOn >= 0.5);
+  }
+
+  // ========================================================== MOD page ======
+  const LFO_DIV_BEATS = [4, 3, 2, 4 / 3, 1.5, 1, 2 / 3, 0.75, 0.5, 1 / 3, 0.375, 0.25, 1 / 6, 0.125, 1 / 12];
+  let tempo = 120;
+  // what an amount of 100% means for each destination (shown next to the amount)
+  const DST_SCALE = {
+    1: [12, 'st'], 2: [12, 'st'], 3: [12, 'st'], 4: [12, 'st'], 8: [3, ''], 9: [3, ''], 10: [3, ''],
+    14: [5, 'oct'], 15: [5, 'oct'], 16: [5, 'oct'], 18: [12, 'dB/oct'], 19: [5, 'oct'], 22: [4, 'oct'],
+    23: [12, 'dB'], 26: [100, 'ct'], 27: [2, 'oct'], 32: [2, 'oct'], 33: [2, 'oct'], 35: [12, 'st'],
+  };
+  function mxAmountText(dst, amt) {
+    const s = DST_SCALE[dst];
+    if (!s) return `${amt > 0.004 ? '+' : ''}${Math.round(amt * 100)}%`;
+    const v = amt * s[0];
+    return `${v > 0.004 ? '+' : ''}${Math.abs(v) >= 10 ? Math.round(v) : v.toFixed(1)} ${s[1]}`.trim();
+  }
+  {
+    const row = $('#mod-row');
+    const col = el('div', 'lfo-col');
+    const lfoUi = [];
+    for (let n = 1; n <= 2; n++) {
+      const g = `lfo${n}`;
+      const p = makePanel(`LFO ${n}`, control(ToggleButton, `${g}On`).el);
+      p.classList.add('lfo-panel');
+      const scr = el('div', 'screen', '<svg viewBox="0 0 200 40" preserveAspectRatio="none"><path class="scr-grid" d="M0 20 H200"/><path class="scr-line" d=""/></svg><div class="scr-text"></div>');
+      p.appendChild(scr);
+      const kr = el('div', 'knob-row');
+      addKnob(kr, `${g}Wave`, 'knob-md');
+      const rateSlot = el('div', '');
+      rateSlot.style.display = 'flex';
+      addKnob(rateSlot, `${g}Rate`, 'knob-md');
+      addKnob(rateSlot, `${g}Div`, 'knob-md');
+      kr.appendChild(rateSlot);
+      addKnob(kr, `${g}Amount`, 'knob-md');
+      addKnob(kr, `${g}Phase`, 'knob-md');
+      p.appendChild(kr);
+      const sw = el('div', 'switch-row');
+      sw.appendChild(control(ToggleButton, `${g}Sync`, 'SYNC').el);
+      sw.appendChild(control(Segmented, `${g}Mode`).el);
+      sw.appendChild(control(Segmented, `${g}Trig`).el);
+      p.appendChild(sw);
+      col.appendChild(p);
+      lfoUi.push({ g, p, scr, rateSlot });
+    }
+    row.appendChild(col);
+
+    const mx = makePanel('MOD MATRIX');
+    mx.appendChild(el('div', 'mx-grid', [0, 1].map(() =>
+      '<div class="mx-head"><span>#</span><span>SOURCE</span><span>× VIA</span><span>DESTINATION</span><span></span><span>AMOUNT</span></div>').join('')));
+    const grid = el('div', 'mx-grid');
+    const mxRows = [];
+    for (let s = 1; s <= NUM_MOD_SLOTS; s++) {
+      const r = el('div', 'mx-row');
+      const num = el('span', 'mx-num', String(s));
+      num.title = 'Click to switch this route on / off';
+      num.dataset.param = `mod${s}On`;
+      num.addEventListener('click', () => setParam(`mod${s}On`, values[`mod${s}On`] >= 0.5 ? 0 : 1));
+      r.appendChild(num);
+      r.appendChild(control(SelectBox, `mod${s}Src`).el);
+      r.appendChild(control(SelectBox, `mod${s}Via`).el);
+      r.appendChild(control(SelectBox, `mod${s}Dst`).el);
+      addKnob(r, `mod${s}Amt`, 'knob-sm');
+      const txt = el('span', 'mx-amt-text');
+      r.appendChild(txt);
+      grid.appendChild(r);
+      mxRows.push({ r, txt, s });
+    }
+    // column-major order: routes 1-6 left, 7-12 right
+    grid.replaceChildren(...[0, 6, 1, 7, 2, 8, 3, 9, 4, 10, 5, 11].map(i => mxRows[i].r));
+    mx.appendChild(grid);
+    mx.appendChild(el('div', 'mx-note',
+      'Several routes on one destination add up. <b>Via</b> scales a route by a second source (e.g. LFO 1 × Mod Wheel). '
+      + 'Plunger, Body Shift and the FX destinations act on the whole sound, so they follow global sources only '
+      + '(LFOs in Global mode, breath, expression, aftertouch, mod wheel, pitch bend).'));
+    row.appendChild(mx);
+
+    function lfoPath(wave, offset) {
+      const pts = [];
+      for (let i = 0; i <= 160; i++) {
+        let t = i / 160 * 2 + offset; t -= Math.floor(t);
+        let y;
+        switch (wave) {
+          case 1: y = 1 - 4 * Math.abs(((t + 0.25) % 1) - 0.5); break;
+          case 2: y = t < 0.5 ? 1 : -1; break;
+          case 3: y = 2 * t - 1; break;
+          case 4: y = 1 - 2 * t; break;
+          case 5: y = [0.55, -0.35, 0.9, -0.8][Math.floor(i / 40) % 4]; break;
+          default: y = Math.sin(2 * Math.PI * t);
+        }
+        pts.push(`${(i / 160 * 200).toFixed(1)},${(20 - y * 16).toFixed(1)}`);
+      }
+      return 'M' + pts.join(' L');
+    }
+    refreshers.push((ids) => {
+      if (!touches(ids, 'lfo')) return;
+      for (const u of lfoUi) {
+        const g = u.g, on = values[`${g}On`] >= 0.5, sync = values[`${g}Sync`] >= 0.5, wave = Math.round(values[`${g}Wave`]);
+        u.rateSlot.children[0].style.display = sync ? 'none' : '';
+        u.rateSlot.children[1].style.display = sync ? '' : 'none';
+        u.scr.querySelector('.scr-line').setAttribute('d', lfoPath(wave, values[`${g}Phase`] / 360));
+        const hz = sync ? (tempo / 60) / LFO_DIV_BEATS[Math.round(values[`${g}Div`])] : values[`${g}Rate`];
+        u.scr.querySelector('.scr-text').textContent = on
+          ? `${LFO_WAVES[wave].toUpperCase()} · ${sync ? LFO_DIVS[Math.round(values[`${g}Div`])] + ' = ' : ''}${hz.toFixed(2)} Hz · ${values[`${g}Mode`] >= 0.5 ? 'VOICE' : 'GLOBAL'}`
+          : 'OFF';
+        u.p.classList.toggle('off', !on);
+      }
+    });
+    refreshers.push((ids) => {
+      if (!touches(ids, 'mod')) return;
+      for (const m of mxRows) {
+        const on = values[`mod${m.s}On`] >= 0.5;
+        const routed = values[`mod${m.s}Src`] >= 0.5 && values[`mod${m.s}Dst`] >= 0.5;
+        m.r.classList.toggle('on', on && routed);
+        m.r.classList.toggle('off', !on);
+        m.txt.textContent = routed ? mxAmountText(Math.round(values[`mod${m.s}Dst`]), values[`mod${m.s}Amt`]) : '—';
+      }
+    });
+  }
+
+  // =========================================================== FX page ======
+  {
+    const r1 = $('#fx-row-1'), r2 = $('#fx-row-2');
+    const drv = makePanel('DRIVE', [control(Segmented, 'fxDrvType').el, control(ToggleButton, 'fxDrvOn').el]);
+    knobRow(drv, ['fxDrvAmt', 'fxDrvTone', 'fxDrvMix'], 'knob-md');
+    drv.appendChild(el('div', 'kbd-hint', 'Level-matched: the output gain follows the input, so more drive means more colour, not more volume.'));
+    r1.appendChild(drv);
+
+    const eq = makePanel('EQ', control(ToggleButton, 'eqOn').el);
+    const eqGraph = makeGraph(eq);
+    const ek = el('div', 'env-knobs');
+    ek.style.gridTemplateColumns = 'repeat(7, minmax(0, 1fr))';
+    ['eqLoGain', 'eqLoFreq', 'eqMidGain', 'eqMidFreq', 'eqMidQ', 'eqHiGain', 'eqHiFreq'].forEach(id => addKnob(ek, id, 'knob-md'));
+    eq.appendChild(ek);
+    r1.appendChild(eq);
+
+    const ch = makePanel('CHORUS', control(ToggleButton, 'chOn').el);
+    knobRow(ch, ['chRate', 'chDepth', 'chMix'], 'knob-md');
+    r2.appendChild(ch);
+    const rv = makePanel('REVERB', [control(Segmented, 'rvType').el, control(ToggleButton, 'rvOn').el]);
+    knobRow(rv, ['rvDecay', 'rvPre', 'rvDamp', 'rvMix'], 'knob-md');
+    r2.appendChild(rv);
+    const out = makePanel('STEREO');
+    knobRow(out, ['stWidth'], 'knob-md');
+    r2.appendChild(out);
+    [drv, eq, ch, rv].forEach(p => p.querySelector('.panel-head').style.justifyContent = 'flex-start');
+    [drv, eq, ch, rv].forEach(p => { p.querySelector('.panel-title').style.marginRight = 'auto'; });
+
+    refreshers.push((ids) => {
+      if (!touches(ids, 'eq', 'fx', 'ch', 'rv')) return;
+      drv.classList.toggle('off', values.fxDrvOn < 0.5);
+      eq.classList.toggle('off', values.eqOn < 0.5);
+      ch.classList.toggle('off', values.chOn < 0.5);
+      rv.classList.toggle('off', values.rvOn < 0.5);
+      if (activePage !== 'fx' && ids) return;
+      const [W, H] = graphSize(eqGraph);
+      const bands = [[BQ.lowShelf, values.eqLoFreq, 0.7071, values.eqLoGain], [BQ.peak, values.eqMidFreq, values.eqMidQ, values.eqMidGain],
+                     [BQ.highShelf, values.eqHiFreq, 0.7071, values.eqHiGain]].map(b => biquadCoefs(b[0], b[1], b[2], b[3], SR_UI));
+      eqGraph.svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      eqGraph.svg.innerHTML = freqGrid(W, H) + `<path class="gr-zero" d="M0 ${H / 2} H${W}"/>
+        <path class="gr-line" d="${responsePath(f => bands.reduce((a, c) => a + biquadMagDb(c, f, SR_UI), 0), W, H, -18, 18)}"/>`;
+      eqGraph.legend.innerHTML = '±18 dB';
+    });
+  }
+
   // page LEDs: which of the extra pages are doing something
   refreshers.push(() => {
     $('#harm-led').classList.toggle('on', values.addOn >= 0.5);
     $('#tone-led').classList.toggle('on', Math.round(values.muteType) > 0 || values.brsAmt > 0.005 || values.dynBrass > 0.005);
     $('#attack-led').classList.toggle('on', values.growlAmt > 0.005 || values.flutAmt > 0.005);
+    $('#perform-led').classList.toggle('on', artNow > 0 || values.artAuto >= 0.5 || values.secPlayers > 1.5
+      || values.mpeOn >= 0.5 || Math.round(values.engineMode) === 1);
+    let routes = false;
+    for (let s = 1; s <= NUM_MOD_SLOTS; s++)
+      if (values[`mod${s}On`] >= 0.5 && values[`mod${s}Src`] >= 0.5 && values[`mod${s}Dst`] >= 0.5 && Math.abs(values[`mod${s}Amt`]) > 0.001) routes = true;
+    $('#mod-led').classList.toggle('on', routes || values.lfo1On >= 0.5 || values.lfo2On >= 0.5);
+    $('#fx-led').classList.toggle('on', values.fxDrvOn >= 0.5 || values.eqOn >= 0.5 || values.chOn >= 0.5 || values.rvOn >= 0.5);
   });
 
   // ---------------------------------------------------------- notes / UI ---
@@ -821,6 +1077,8 @@
       clipTimer = setTimeout(() => meterClip.classList.remove('on'), 800);
     }
     if (typeof s.bpm === 'number' && s.bpm > 0 && document.activeElement !== bpmInput) bpmInput.value = String(Math.round(s.bpm * 10) / 10);
+    if (typeof s.bpm === 'number' && s.bpm > 0 && Math.abs(s.bpm - tempo) > 0.01) { tempo = s.bpm; refresh(new Set(['lfo1Sync'])); }
+    if (typeof s.articulation === 'number' && s.articulation !== artNow) setArt(s.articulation);
     if (typeof s.plunger === 'number' && Math.abs(s.plunger - plungerNow) > 0.01) {
       plungerNow = s.plunger;
       if (Math.round(values.muteType) === 4 && values.muteSrc >= 0.5) drawTone(new Set(['plunger']));
@@ -828,7 +1086,8 @@
   });
 
   let connectedOnce = false;
-  engine.on('config', ({ sampleRate, blockSize, wrapper, audio, running }) => {
+  engine.on('config', ({ sampleRate, blockSize, wrapper, audio, running, startPage }) => {
+    if (startPage && PAGE_HINTS[startPage] && !connectedOnce) showPage(startPage);
     const web = wrapper === 'Web';
     document.body.classList.toggle('web', web);
     const sr = sampleRate > 0 ? `${(sampleRate / 1000).toFixed(1)} kHz · ${blockSize} smp` : 'not playing yet';
@@ -881,6 +1140,7 @@
   showPage(activePage);
   setOctave(Number(store.get('bk.octave')) || 36);
   refresh(null);
+  setArt(0);
   fit();
   if (engine.connected) engine.uiReady();
   else logMidi('Not running inside the plugin: no audio engine connected (UI preview only)');
